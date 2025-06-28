@@ -1,0 +1,15 @@
+[build]
+builder = "nixpacks"
+
+[deploy]
+healthcheckPath = "/"
+healthcheckTimeout = 100
+restartPolicyType = "never"
+
+[[deploy.environmentVariables]]
+name = "NODE_ENV"
+value = "production"
+
+[deploy.headers]
+"Cross-Origin-Embedder-Policy" = "require-corp"
+"Cross-Origin-Opener-Policy" = "same-origin" 
