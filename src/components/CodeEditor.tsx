@@ -19,6 +19,7 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ file, onFileUpdate }) => {
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
   const [editorValue, setEditorValue] = useState<string>('');
   const updateTimeoutRef = useRef<number | null>(null);
+  const currentFilePathRef = useRef<string | null>(null);
 
   const getLanguage = (fileName: string): string => {
     const ext = fileName.split('.').pop()?.toLowerCase();
@@ -63,11 +64,12 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ file, onFileUpdate }) => {
   };
 
   useEffect(() => {
-    // Only update editor if the file actually changed (not just content updates)
-    if (file && file.content !== undefined && file.content !== editorValue) {
-      setEditorValue(file.content);
+    // Only update editor when switching to a different file
+    if (file && file.path !== currentFilePathRef.current) {
+      currentFilePathRef.current = file.path;
+      setEditorValue(file.content || '');
     }
-  }, [file?.path, file?.content, editorValue]); // Include editorValue in dependencies
+  }, [file]); // React to any file change
 
   useEffect(() => {
     // Cleanup timeout on unmount
