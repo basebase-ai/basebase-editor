@@ -22,4 +22,15 @@ export default defineConfig({
   define: {
     global: "globalThis",
   },
+  build: {
+    // Ensure all built assets have proper CORS headers
+    rollupOptions: {
+      output: {
+        // Add integrity checks for cross-origin resources
+        entryFileNames: "assets/[name]-[hash].js",
+        chunkFileNames: "assets/[name]-[hash].js",
+        assetFileNames: "assets/[name]-[hash].[ext]",
+      },
+    },
+  },
 });

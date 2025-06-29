@@ -45,28 +45,15 @@ class WebContainerManager {
         self.crossOriginIsolated
       );
 
-      // Try credentialless mode for better deployment compatibility
-      this.instance = await WebContainer.boot({ coep: "credentialless" });
+      // Standard WebContainer boot
+      this.instance = await WebContainer.boot();
       this.isBooting = false;
-      console.log("WebContainer booted successfully in credentialless mode");
+      console.log("WebContainer booted successfully");
       return this.instance;
     } catch (error) {
       this.isBooting = false;
       console.error("WebContainer boot failed:", error);
-
-      // Fallback to default mode if credentialless fails
-      try {
-        console.log("Retrying WebContainer boot in default mode...");
-        this.isBooting = true;
-        this.instance = await WebContainer.boot();
-        this.isBooting = false;
-        console.log("WebContainer booted successfully in default mode");
-        return this.instance;
-      } catch (fallbackError) {
-        this.isBooting = false;
-        console.error("WebContainer fallback boot also failed:", fallbackError);
-        throw fallbackError;
-      }
+      throw error;
     }
   }
 
