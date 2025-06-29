@@ -4,10 +4,11 @@ import { Octokit } from '@octokit/rest';
 interface PublishModalProps {
   repoUrl: string;
   githubToken: string | null;
+  modifiedFiles: Map<string, string>;
   onClose: () => void;
 }
 
-const PublishModal: React.FC<PublishModalProps> = ({ repoUrl, githubToken, onClose }) => {
+const PublishModal: React.FC<PublishModalProps> = ({ repoUrl, githubToken, modifiedFiles, onClose }) => {
   const [branchName, setBranchName] = useState<string>('');
   const [description, setDescription] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
@@ -35,8 +36,6 @@ const PublishModal: React.FC<PublishModalProps> = ({ repoUrl, githubToken, onClo
     setError(null);
 
     try {
-      const octokit = new Octokit({ auth: githubToken });
-      
       // Parse repository URL
       const urlParts = repoUrl.replace('https://github.com/', '').split('/');
       if (urlParts.length < 2) {
@@ -44,21 +43,33 @@ const PublishModal: React.FC<PublishModalProps> = ({ repoUrl, githubToken, onClo
       }
       const owner = urlParts[0];
       const repo = urlParts[1];
+      const sanitizedBranchName = branchName.trim().toLowerCase().replace(/[^a-z0-9-]/g, '-');
 
-      // Get the default branch
+      console.log('📝 Modified files to commit:', Array.from(modifiedFiles.keys()));
+
+      if (modifiedFiles.size === 0) {
+        throw new Error('No files have been modified. Make some changes before publishing.');
+      }
+
+      const octokit = new Octokit({ auth: githubToken });
+
+      // Get repository info and default branch
+      console.log('🔍 Getting repository info...');
       const { data: repoData } = await octokit.repos.get({ owner, repo });
       const defaultBranch = repoData.default_branch;
+      console.log('Default branch:', defaultBranch);
 
-      // Get the latest commit SHA from the default branch
+      // Get the latest commit SHA
       const { data: refData } = await octokit.git.getRef({
         owner,
         repo,
         ref: `heads/${defaultBranch}`,
       });
       const latestSha = refData.object.sha;
+      console.log('Latest commit SHA:', latestSha);
 
-      // Create a new branch
-      const sanitizedBranchName = branchName.trim().toLowerCase().replace(/[^a-z0-9-]/g, '-');
+      // Create new branch
+      console.log('🌿 Creating branch:', sanitizedBranchName);
       await octokit.git.createRef({
         owner,
         repo,
@@ -66,7 +77,58 @@ const PublishModal: React.FC<PublishModalProps> = ({ repoUrl, githubToken, onClo
         sha: latestSha,
       });
 
-      // Create a pull request
+      // Create blobs for modified files and build tree
+      const treeItems = [];
+      console.log('📄 Creating blobs for modified files...');
+      
+      for (const [filePath, content] of modifiedFiles) {
+        console.log('Creating blob for:', filePath);
+        const { data: blobData } = await octokit.git.createBlob({
+          owner,
+          repo,
+          content,
+          encoding: 'utf-8',
+        });
+        
+        treeItems.push({
+          path: filePath,
+          mode: '100644' as const,
+          type: 'blob' as const,
+          sha: blobData.sha,
+        });
+      }
+
+      // Create new tree
+      console.log('🌳 Creating new tree...');
+      const { data: treeData } = await octokit.git.createTree({
+        owner,
+        repo,
+        base_tree: latestSha,
+        tree: treeItems,
+      });
+
+      // Create commit
+      const commitMessage = `Changes from BaseBase Editor: ${branchName}\n\n${description}`;
+      console.log('💾 Creating commit...');
+      const { data: commitData } = await octokit.git.createCommit({
+        owner,
+        repo,
+        message: commitMessage,
+        tree: treeData.sha,
+        parents: [latestSha],
+      });
+
+      // Update branch reference
+      console.log('🔗 Updating branch reference...');
+      await octokit.git.updateRef({
+        owner,
+        repo,
+        ref: `heads/${sanitizedBranchName}`,
+        sha: commitData.sha,
+      });
+
+      // Create pull request
+      console.log('🚀 Creating pull request...');
       const { data: prData } = await octokit.pulls.create({
         owner,
         repo,
@@ -76,11 +138,13 @@ const PublishModal: React.FC<PublishModalProps> = ({ repoUrl, githubToken, onClo
         body: description,
       });
 
+      console.log('✅ Pull request created successfully:', prData.html_url);
+
       // Success! Show the PR URL
       window.open(prData.html_url, '_blank');
       onClose();
     } catch (err) {
-      console.error('Failed to create pull request:', err);
+      console.error('❌ Failed to create pull request:', err);
       const message = err instanceof Error ? err.message : String(err);
       setError(`Failed to create pull request: ${message}`);
     } finally {

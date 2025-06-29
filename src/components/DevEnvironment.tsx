@@ -33,6 +33,7 @@ const DevEnvironment: React.FC<DevEnvironmentProps> = ({ githubToken, repoUrl })
   const [serverInfo, setServerInfo] = useState<ServerInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showPublishModal, setShowPublishModal] = useState<boolean>(false);
+  const [modifiedFiles, setModifiedFiles] = useState<Map<string, string>>(new Map());
   const containerRef = useRef<WebContainer | null>(null);
 
   useEffect(() => {
@@ -232,6 +233,8 @@ const DevEnvironment: React.FC<DevEnvironmentProps> = ({ githubToken, repoUrl })
       console.warn('Missing required files:', missingFiles);
     }
     
+    // Note: WebContainer doesn't have git installed, so we'll use GitHub API for version control
+    
     // Build file tree for UI
     const tree = buildFileTree(filesMap);
     setFileTree(tree);
@@ -353,6 +356,11 @@ const DevEnvironment: React.FC<DevEnvironmentProps> = ({ githubToken, repoUrl })
     if (containerRef.current) {
       try {
         await containerRef.current.fs.writeFile(path, content);
+        
+        // Track modified files
+        setModifiedFiles(prev => new Map(prev.set(path, content)));
+        console.log('📝 File modified:', path);
+        
         if (selectedFile?.path === path) {
           setSelectedFile({ ...selectedFile, content });
         }
@@ -447,6 +455,7 @@ const DevEnvironment: React.FC<DevEnvironmentProps> = ({ githubToken, repoUrl })
         <PublishModal
           repoUrl={repoUrl}
           githubToken={githubToken}
+          modifiedFiles={modifiedFiles}
           onClose={() => setShowPublishModal(false)}
         />
       )}
