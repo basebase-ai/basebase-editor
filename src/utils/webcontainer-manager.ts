@@ -2,67 +2,55 @@ import { WebContainer } from "@webcontainer/api";
 
 class WebContainerManager {
   private static instance: WebContainer | null = null;
-  private static isBooting: boolean = false;
+  private static bootPromise: Promise<WebContainer> | null = null;
 
-  static async getInstance(): Promise<WebContainer> {
-    // Check cross-origin isolation first
-    if (!self.crossOriginIsolated) {
-      throw new Error(
-        "WebContainer requires cross-origin isolation. " +
-          "Please ensure your page is served with proper COOP and COEP headers. " +
-          `Current crossOriginIsolated status: ${self.crossOriginIsolated}`
-      );
-    }
-
-    // If already booting, wait for it to complete
-    if (this.isBooting) {
-      return new Promise((resolve, reject) => {
-        const checkInterval = setInterval(() => {
-          if (!this.isBooting && this.instance) {
-            clearInterval(checkInterval);
-            resolve(this.instance);
-          }
-        }, 100);
-
-        // Timeout after 30 seconds
-        setTimeout(() => {
-          clearInterval(checkInterval);
-          reject(new Error("WebContainer boot timeout"));
-        }, 30000);
-      });
-    }
-
-    // If instance exists, return it
+  static getInstance(): Promise<WebContainer> {
+    // If we already have a booted instance, return it immediately.
     if (this.instance) {
-      return this.instance;
+      return Promise.resolve(this.instance);
     }
 
-    // Boot new instance
-    try {
-      this.isBooting = true;
-      console.log(
-        "Booting WebContainer with crossOriginIsolated:",
-        self.crossOriginIsolated
-      );
-
-      // Standard WebContainer boot
-      this.instance = await WebContainer.boot();
-      this.isBooting = false;
-      console.log("WebContainer booted successfully");
-      return this.instance;
-    } catch (error) {
-      this.isBooting = false;
-      console.error("WebContainer boot failed:", error);
-      throw error;
+    // If a boot is already in progress, return the existing promise.
+    // This prevents race conditions from multiple components trying to boot at once.
+    if (this.bootPromise) {
+      return this.bootPromise;
     }
+
+    // Otherwise, start a new boot process.
+    this.bootPromise = (async () => {
+      try {
+        if (!self.crossOriginIsolated) {
+          throw new Error(
+            "WebContainer requires cross-origin isolation. " +
+              "Please ensure your page is served with proper COOP and COEP headers."
+          );
+        }
+
+        console.log("Booting WebContainer...");
+        const container = await WebContainer.boot();
+        console.log("WebContainer booted successfully.");
+
+        this.instance = container;
+        return this.instance;
+      } catch (error) {
+        // On failure, clear the promise so a subsequent call can retry.
+        this.bootPromise = null;
+        console.error("WebContainer boot failed:", error);
+        throw error;
+      }
+    })();
+
+    return this.bootPromise;
   }
 
-  static async teardown(): Promise<void> {
+  static teardown(): void {
     if (this.instance) {
-      this.instance.teardown();
+      // WebContainer doesn't have a public teardown method
+      // Just clear our reference to allow for a new instance if needed.
       this.instance = null;
+      this.bootPromise = null;
+      console.log("WebContainer instance cleared");
     }
-    this.isBooting = false;
   }
 
   static hasInstance(): boolean {

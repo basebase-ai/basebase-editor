@@ -25,7 +25,6 @@ interface ServerInfo {
 }
 
 const DevEnvironment: React.FC<DevEnvironmentProps> = ({ githubToken, repoUrl }) => {
-  const [webContainer, setWebContainer] = useState<WebContainer | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [loadingMessage, setLoadingMessage] = useState<string>('Initializing WebContainer...');
   const [fileTree, setFileTree] = useState<FileNode[]>([]);
@@ -35,8 +34,43 @@ const DevEnvironment: React.FC<DevEnvironmentProps> = ({ githubToken, repoUrl })
   const containerRef = useRef<WebContainer | null>(null);
 
   useEffect(() => {
+    // Add reload detection
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      console.warn('Page is about to reload/unload during WebContainer initialization!');
+      e.preventDefault();
+      e.returnValue = '';
+      return '';
+    };
+
+    const handleUnload = () => {
+      console.error('Page unloaded during WebContainer initialization!');
+    };
+
+    // Add global error handling
+    const handleError = (e: ErrorEvent) => {
+      console.error('Global error during WebContainer initialization:', e.error);
+      console.error('Error message:', e.message);
+      console.error('Error filename:', e.filename);
+      console.error('Error line:', e.lineno);
+    };
+
+    const handleUnhandledRejection = (e: PromiseRejectionEvent) => {
+      console.error('Unhandled promise rejection during WebContainer initialization:', e.reason);
+      e.preventDefault(); // Prevent default handling that might cause reload
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    window.addEventListener('unload', handleUnload);
+    window.addEventListener('error', handleError);
+    window.addEventListener('unhandledrejection', handleUnhandledRejection);
+
     initializeEnvironment();
+    
     return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      window.removeEventListener('unload', handleUnload);
+      window.removeEventListener('error', handleError);
+      window.removeEventListener('unhandledrejection', handleUnhandledRejection);
       // Don't teardown here since other components might be using the same instance
       // WebContainer will be cleaned up when the app unmounts
       containerRef.current = null;
@@ -60,9 +94,9 @@ const DevEnvironment: React.FC<DevEnvironmentProps> = ({ githubToken, repoUrl })
 
       setLoadingMessage('Starting WebContainer...');
       
+      // Get WebContainer instance
       const container = await WebContainerManager.getInstance();
       containerRef.current = container;
-      setWebContainer(container);
 
       setLoadingMessage('Cloning repository...');
       await cloneRepository(container);
@@ -73,11 +107,10 @@ const DevEnvironment: React.FC<DevEnvironmentProps> = ({ githubToken, repoUrl })
       setLoadingMessage('Starting development server...');
       await startDevServer(container);
 
-      setIsLoading(false);
-    } catch (err) {
-      console.error('Environment initialization failed:', err);
-      const errorMessage = err instanceof Error ? err.message : 'Failed to initialize environment';
-      setError(errorMessage);
+    } catch (error: unknown) {
+      console.error('Environment initialization failed:', error);
+      const message = error instanceof Error ? error.message : String(error);
+      setError(`Failed to initialize environment: ${message}`);
       setIsLoading(false);
     }
   };
@@ -256,6 +289,7 @@ const DevEnvironment: React.FC<DevEnvironmentProps> = ({ githubToken, repoUrl })
     container.on('server-ready', (port: number, url: string) => {
       console.log('WebContainer server-ready event:', { port, url });
       setServerInfo({ url, port });
+      setIsLoading(false);
     });
 
     // Also listen for port events
@@ -263,6 +297,7 @@ const DevEnvironment: React.FC<DevEnvironmentProps> = ({ githubToken, repoUrl })
       console.log('WebContainer port event:', { port, type, url });
       if (type === 'open') {
         setServerInfo({ url, port });
+        setIsLoading(false);
       }
     });
 
@@ -288,6 +323,7 @@ const DevEnvironment: React.FC<DevEnvironmentProps> = ({ githubToken, repoUrl })
             const detectedPort = parseInt(match[1]);
             console.log('Server detected on port:', detectedPort);
             setServerInfo({ url: `http://localhost:${detectedPort}`, port: detectedPort });
+            setIsLoading(false);
             return;
           }
         }
@@ -296,9 +332,9 @@ const DevEnvironment: React.FC<DevEnvironmentProps> = ({ githubToken, repoUrl })
   };
 
   const handleFileSelect = async (file: FileNode): Promise<void> => {
-    if (file.type === 'file' && webContainer) {
+    if (file.type === 'file' && containerRef.current) {
       try {
-        const content = await webContainer.fs.readFile(file.path, 'utf-8');
+        const content = await containerRef.current.fs.readFile(file.path, 'utf-8');
         setSelectedFile({ ...file, content });
       } catch (err) {
         console.error('Failed to read file:', err);
@@ -307,9 +343,9 @@ const DevEnvironment: React.FC<DevEnvironmentProps> = ({ githubToken, repoUrl })
   };
 
   const handleFileUpdate = async (path: string, content: string): Promise<void> => {
-    if (webContainer) {
+    if (containerRef.current) {
       try {
-        await webContainer.fs.writeFile(path, content);
+        await containerRef.current.fs.writeFile(path, content);
         if (selectedFile?.path === path) {
           setSelectedFile({ ...selectedFile, content });
         }
