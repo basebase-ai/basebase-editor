@@ -16,7 +16,7 @@ app.use((req, res, next) => {
   res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
 
   // Additional headers for WebContainer compatibility
-  res.setHeader("Permissions-Policy", "cross-origin-isolated=(self)");
+  res.setHeader("Permissions-Policy", "cross-origin-isolated=*");
   res.setHeader("X-Frame-Options", "SAMEORIGIN");
   res.setHeader("Referrer-Policy", "same-origin");
 
