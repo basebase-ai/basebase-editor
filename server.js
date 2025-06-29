@@ -23,8 +23,24 @@ app.use((req, res, next) => {
   next();
 });
 
-// Serve static files from the dist directory
-app.use(express.static(path.join(__dirname, "dist")));
+// Serve static files from the dist directory with proper CORP headers
+app.use(
+  express.static(path.join(__dirname, "dist"), {
+    setHeaders: (res, path) => {
+      // Ensure all static assets have proper CORP headers
+      res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+
+      // Set specific headers for different asset types
+      if (path.endsWith(".js")) {
+        res.setHeader("Content-Type", "application/javascript");
+      } else if (path.endsWith(".css")) {
+        res.setHeader("Content-Type", "text/css");
+      } else if (path.endsWith(".html")) {
+        res.setHeader("Content-Type", "text/html; charset=UTF-8");
+      }
+    },
+  })
+);
 
 // Handle all routes by serving index.html (SPA fallback)
 app.get("*", (req, res) => {
