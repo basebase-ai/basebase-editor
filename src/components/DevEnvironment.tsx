@@ -5,6 +5,7 @@ import WebContainerManager from '../utils/webcontainer-manager';
 import FileExplorer from './FileExplorer';
 import CodeEditor from './CodeEditor';
 import PreviewPane from './PreviewPane';
+import PublishModal from './PublishModal';
 
 interface DevEnvironmentProps {
   githubToken: string | null;
@@ -31,6 +32,7 @@ const DevEnvironment: React.FC<DevEnvironmentProps> = ({ githubToken, repoUrl })
   const [selectedFile, setSelectedFile] = useState<FileNode | null>(null);
   const [serverInfo, setServerInfo] = useState<ServerInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [showPublishModal, setShowPublishModal] = useState<boolean>(false);
   const containerRef = useRef<WebContainer | null>(null);
 
   useEffect(() => {
@@ -407,15 +409,18 @@ const DevEnvironment: React.FC<DevEnvironmentProps> = ({ githubToken, repoUrl })
             {repoUrl.replace('https://github.com/', '')}
           </div>
         </div>
-        <div className="flex items-center space-x-2 text-sm text-gray-500">
-          <span>🟢 WebContainer Active</span>
-        </div>
+        <button
+          onClick={() => setShowPublishModal(true)}
+          className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors"
+        >
+          Publish Changes
+        </button>
       </div>
 
       {/* Main content */}
       <div className="flex flex-1 overflow-hidden">
-        {/* File Explorer - 10% */}
-        <div className="flex-[0_0_10%] bg-white border-r">
+        {/* File Explorer - Fixed width */}
+        <div className="w-64 flex-shrink-0 bg-white border-r">
           <FileExplorer 
             files={fileTree} 
             onFileSelect={handleFileSelect}
@@ -423,19 +428,28 @@ const DevEnvironment: React.FC<DevEnvironmentProps> = ({ githubToken, repoUrl })
           />
         </div>
 
-        {/* Code Editor - 40% */}
-        <div className="flex-[0_0_40%] bg-white border-r">
+        {/* Code Editor - Fixed width */}
+        <div className="w-96 flex-shrink-0 bg-white border-r">
           <CodeEditor 
             file={selectedFile}
             onFileUpdate={handleFileUpdate}
           />
         </div>
 
-        {/* Preview Pane - 50% */}
-        <div className="flex-[0_0_50%] bg-white">
+        {/* Preview Pane - Takes remaining space */}
+        <div className="flex-1 bg-white">
           <PreviewPane serverInfo={serverInfo} />
         </div>
       </div>
+
+      {/* Publish Modal */}
+      {showPublishModal && (
+        <PublishModal
+          repoUrl={repoUrl}
+          githubToken={githubToken}
+          onClose={() => setShowPublishModal(false)}
+        />
+      )}
     </div>
   );
 };
