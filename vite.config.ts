@@ -18,6 +18,7 @@ export default defineConfig({
   preview: {
     port: 8080,
     host: "0.0.0.0", // Allow external access
+    allowedHosts: ["healthcheck.railway.app"],
     headers: {
       "Cross-Origin-Embedder-Policy": "require-corp",
       "Cross-Origin-Opener-Policy": "same-origin",
