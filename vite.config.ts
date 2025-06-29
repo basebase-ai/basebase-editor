@@ -15,6 +15,15 @@ export default defineConfig({
     host: "localhost",
     cors: true,
   },
+  preview: {
+    port: 8080,
+    host: "0.0.0.0", // Allow external access
+    headers: {
+      "Cross-Origin-Embedder-Policy": "require-corp",
+      "Cross-Origin-Opener-Policy": "same-origin",
+      "Cross-Origin-Resource-Policy": "cross-origin",
+    },
+  },
   optimizeDeps: {
     exclude: ["@webcontainer/api"],
   },
