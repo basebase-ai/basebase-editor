@@ -5,6 +5,15 @@ class WebContainerManager {
   private static isBooting: boolean = false;
 
   static async getInstance(): Promise<WebContainer> {
+    // Check cross-origin isolation first
+    if (!self.crossOriginIsolated) {
+      throw new Error(
+        "WebContainer requires cross-origin isolation. " +
+          "Please ensure your page is served with proper COOP and COEP headers. " +
+          `Current crossOriginIsolated status: ${self.crossOriginIsolated}`
+      );
+    }
+
     // If already booting, wait for it to complete
     if (this.isBooting) {
       return new Promise((resolve, reject) => {
@@ -31,12 +40,33 @@ class WebContainerManager {
     // Boot new instance
     try {
       this.isBooting = true;
-      this.instance = await WebContainer.boot();
+      console.log(
+        "Booting WebContainer with crossOriginIsolated:",
+        self.crossOriginIsolated
+      );
+
+      // Try credentialless mode for better deployment compatibility
+      this.instance = await WebContainer.boot({ coep: "credentialless" });
       this.isBooting = false;
+      console.log("WebContainer booted successfully in credentialless mode");
       return this.instance;
     } catch (error) {
       this.isBooting = false;
-      throw error;
+      console.error("WebContainer boot failed:", error);
+
+      // Fallback to default mode if credentialless fails
+      try {
+        console.log("Retrying WebContainer boot in default mode...");
+        this.isBooting = true;
+        this.instance = await WebContainer.boot();
+        this.isBooting = false;
+        console.log("WebContainer booted successfully in default mode");
+        return this.instance;
+      } catch (fallbackError) {
+        this.isBooting = false;
+        console.error("WebContainer fallback boot also failed:", fallbackError);
+        throw fallbackError;
+      }
     }
   }
 

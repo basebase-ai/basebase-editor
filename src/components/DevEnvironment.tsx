@@ -45,6 +45,19 @@ const DevEnvironment: React.FC<DevEnvironmentProps> = ({ githubToken, repoUrl })
 
   const initializeEnvironment = async (): Promise<void> => {
     try {
+      // Debug cross-origin isolation status
+      console.log('=== Cross-Origin Isolation Status ===');
+      console.log('self.crossOriginIsolated:', self.crossOriginIsolated);
+      console.log('SharedArrayBuffer available:', typeof SharedArrayBuffer !== 'undefined');
+      console.log('Window location:', window.location.href);
+      
+      if (!self.crossOriginIsolated) {
+        throw new Error(
+          'This application requires cross-origin isolation to function properly. ' +
+          'The page appears to not be properly configured. Please contact support.'
+        );
+      }
+
       setLoadingMessage('Starting WebContainer...');
       
       const container = await WebContainerManager.getInstance();
@@ -62,7 +75,9 @@ const DevEnvironment: React.FC<DevEnvironmentProps> = ({ githubToken, repoUrl })
 
       setIsLoading(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to initialize environment');
+      console.error('Environment initialization failed:', err);
+      const errorMessage = err instanceof Error ? err.message : 'Failed to initialize environment';
+      setError(errorMessage);
       setIsLoading(false);
     }
   };
