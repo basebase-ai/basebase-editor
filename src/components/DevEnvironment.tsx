@@ -212,8 +212,6 @@ const DevEnvironment: React.FC<DevEnvironmentProps> = ({ githubToken, repoUrl })
       }
     }
 
-    console.log('FileSystemTree structure:', JSON.stringify(fileSystemTree, null, 2));
-
     try {
       await container.mount(fileSystemTree);
       console.log('Successfully mounted FileSystemTree');
@@ -334,11 +332,18 @@ const DevEnvironment: React.FC<DevEnvironmentProps> = ({ githubToken, repoUrl })
   const handleFileSelect = async (file: FileNode): Promise<void> => {
     if (file.type === 'file' && containerRef.current) {
       try {
+        console.log('Reading file:', file.path);
         const content = await containerRef.current.fs.readFile(file.path, 'utf-8');
+        console.log('File content loaded successfully:', file.path, content.length, 'characters');
         setSelectedFile({ ...file, content });
       } catch (err) {
-        console.error('Failed to read file:', err);
+        console.error('Failed to read file:', file.path, err);
+        // Show an error message instead of loading forever
+        const errorContent = `// Error loading file: ${file.path}\n// ${err instanceof Error ? err.message : String(err)}\n\n// Please check the browser console for more details.`;
+        setSelectedFile({ ...file, content: errorContent });
       }
+    } else {
+      console.log('File selection skipped:', file.type, !!containerRef.current);
     }
   };
 

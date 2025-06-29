@@ -47,6 +47,21 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ file, onFileUpdate }) => {
     editorRef.current = editor;
   };
 
+  const handleBeforeMount = (monaco: typeof import('monaco-editor')): void => {
+    // Disable validation/linting for TypeScript and JavaScript
+    monaco.languages.typescript.typescriptDefaults.setDiagnosticsOptions({
+      noSemanticValidation: true,
+      noSyntaxValidation: true,
+      noSuggestionDiagnostics: true,
+    });
+
+    monaco.languages.typescript.javascriptDefaults.setDiagnosticsOptions({
+      noSemanticValidation: true,
+      noSyntaxValidation: true,
+      noSuggestionDiagnostics: true,
+    });
+  };
+
   const debouncedUpdate = useCallback((path: string, content: string) => {
     if (updateTimeoutRef.current) {
       clearTimeout(updateTimeoutRef.current);
@@ -99,6 +114,7 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ file, onFileUpdate }) => {
             height="100%"
             language={getLanguage(file.name)}
             value={editorValue}
+            beforeMount={handleBeforeMount}
             onMount={handleEditorDidMount}
             onChange={handleEditorChange}
             theme="vs-light"
