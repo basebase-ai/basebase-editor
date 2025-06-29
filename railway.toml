@@ -5,11 +5,8 @@ builder = "nixpacks"
 healthcheckPath = "/"
 healthcheckTimeout = 100
 restartPolicyType = "never"
+startCommand = "npm start"
 
 [[deploy.environmentVariables]]
 name = "NODE_ENV"
-value = "production"
-
-[deploy.headers]
-"Cross-Origin-Embedder-Policy" = "require-corp"
-"Cross-Origin-Opener-Policy" = "same-origin" 
+value = "production" 

@@ -7,13 +7,15 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "start": "node server.js"
   },
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",
     "@octokit/rest": "^22.0.0",
     "@tailwindcss/vite": "^4.1.11",
     "@webcontainer/api": "^1.6.1",
+    "express": "^4.21.2",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
   },
