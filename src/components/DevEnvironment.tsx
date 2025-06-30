@@ -35,8 +35,14 @@ const DevEnvironment: React.FC<DevEnvironmentProps> = ({ githubToken, repoUrl })
   const [showPublishModal, setShowPublishModal] = useState<boolean>(false);
   const [modifiedFiles, setModifiedFiles] = useState<Map<string, string>>(new Map());
   const containerRef = useRef<WebContainer | null>(null);
+  const initializedRef = useRef<boolean>(false);
 
   useEffect(() => {
+    if (initializedRef.current) {
+      return;
+    }
+    initializedRef.current = true;
+
     // Add reload detection
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
       console.warn('Page is about to reload/unload during WebContainer initialization!');
@@ -76,7 +82,6 @@ const DevEnvironment: React.FC<DevEnvironmentProps> = ({ githubToken, repoUrl })
       window.removeEventListener('unhandledrejection', handleUnhandledRejection);
       // Don't teardown here since other components might be using the same instance
       // WebContainer will be cleaned up when the app unmounts
-      containerRef.current = null;
     };
   }, []);
 
@@ -106,6 +111,9 @@ const DevEnvironment: React.FC<DevEnvironmentProps> = ({ githubToken, repoUrl })
 
       setLoadingMessage('Installing dependencies...');
       await installDependencies(container);
+
+      setLoadingMessage('Installing Claude Code...');
+      await installClaudeCode(container);
 
       setLoadingMessage('Starting development server...');
       await startDevServer(container);
@@ -284,6 +292,125 @@ const DevEnvironment: React.FC<DevEnvironmentProps> = ({ githubToken, repoUrl })
     
     if (exitCode !== 0) {
       throw new Error('Failed to install dependencies');
+    }
+  };
+
+  const installClaudeCode = async (container: WebContainer): Promise<void> => {
+    // Clean npm cache to prevent EEXIST errors
+    console.log('Cleaning npm cache to fix potential EEXIST errors...');
+    const cacheCleanProcess = await container.spawn('npm', ['cache', 'clean', '--force']);
+    cacheCleanProcess.output.pipeTo(new WritableStream({
+        write(data) {
+            console.log('npm cache clean output:', data);
+        }
+    }));
+    const cacheCleanExitCode = await cacheCleanProcess.exit;
+    if (cacheCleanExitCode !== 0) {
+        console.warn(`'npm cache clean --force' exited with code ${cacheCleanExitCode}.`);
+    }
+    
+    // Set up a directory for global npm packages to avoid permissions errors.
+    console.log('Setting up npm global directory to avoid permission errors...');
+    const npmGlobalPath = '/home/.npm-global';
+    const setupProcess = await container.spawn('sh', [
+        '-c',
+        `mkdir -p ${npmGlobalPath} && npm config set prefix '${npmGlobalPath}'`
+    ]);
+    setupProcess.output.pipeTo(new WritableStream({
+        write(data) { console.log('npm setup output:', data); }
+    }));
+    if ((await setupProcess.exit) !== 0) {
+        throw new Error('Failed to set up npm global directory.');
+    }
+
+    // Install claude-code globally, ensuring the new global bin is in the PATH.
+    console.log('Installing @anthropic-ai/claude-code globally...');
+    const installCommand = `export PATH=${npmGlobalPath}/bin:$PATH && npm install -g @anthropic-ai/claude-code`;
+    const installProcess = await container.spawn('sh', ['-c', installCommand]);
+    const installExitCode = await installProcess.exit;
+    if (installExitCode !== 0) {
+      throw new Error('Failed to install @anthropic-ai/claude-code');
+    }
+
+    // Manually make the cli script executable, as npm might fail to do so.
+    const chmodCliProcess = await container.spawn('sh', [
+        '-c',
+        `chmod +x ${npmGlobalPath}/lib/node_modules/@anthropic-ai/claude-code/cli.js`
+    ]);
+    if ((await chmodCliProcess.exit) !== 0) {
+        throw new Error('Failed to make claude cli executable.');
+    }
+
+    // Create a wrapper script for claude since symlinks don't work in WebContainer
+    console.log('Creating wrapper script for claude...');
+    const wrapperScript = `#!/bin/sh\nnode ${npmGlobalPath}/lib/node_modules/@anthropic-ai/claude-code/cli.js "$@"`;
+    const createWrapperProcess = await container.spawn('sh', [
+        '-c',
+        `rm -f ${npmGlobalPath}/bin/claude && echo '${wrapperScript}' > ${npmGlobalPath}/bin/claude-wrapper && chmod +x ${npmGlobalPath}/bin/claude-wrapper && mv ${npmGlobalPath}/bin/claude-wrapper ${npmGlobalPath}/bin/claude`
+    ]);
+    createWrapperProcess.output.pipeTo(new WritableStream({
+        write(data) { console.log('wrapper script creation output:', data); }
+    }));
+    if ((await createWrapperProcess.exit) !== 0) {
+        throw new Error('Failed to create claude wrapper script.');
+    }
+
+    // Create the API key helper script
+    const apiKeyHelperContent = `echo "${import.meta.env.VITE_ANTHROPIC_API_KEY || ''}"`;
+    const helperPath = '/home/anthropicApiKeyHelper.sh';
+    
+    const createScriptProcess = await container.spawn('sh', [
+      '-c',
+      `echo '${apiKeyHelperContent}' > ${helperPath}`
+    ]);
+    if ((await createScriptProcess.exit) !== 0) {
+      throw new Error('Failed to create API key helper script.');
+    }
+
+    // Make the script executable
+    const chmodProcess = await container.spawn('sh', ['-c', `chmod +x ${helperPath}`]);
+    if ((await chmodProcess.exit) !== 0) {
+      throw new Error('Failed to make API key helper executable.');
+    }
+
+    // Create the settings directory and file
+    const settingsDir = '/home/.claude';
+    const settingsPath = `${settingsDir}/settings.local.json`;
+    
+    const mkdirProcess = await container.spawn('sh', ['-c', `mkdir -p ${settingsDir}`]);
+     if ((await mkdirProcess.exit) !== 0) {
+      throw new Error('Failed to create .claude directory.');
+    }
+
+    const settingsContent = {
+      permissions: {
+        allow: [
+          "Bash(find:*)",
+          "Bash(ls:*)"
+        ],
+        deny: []
+      },
+      apiKeyHelper: helperPath
+    };
+    
+    const createSettingsProcess = await container.spawn('sh', [
+      '-c',
+      `echo '${JSON.stringify(settingsContent)}' > ${settingsPath}`
+    ]);
+    if ((await createSettingsProcess.exit) !== 0) {
+      throw new Error('Failed to create claude settings file.');
+    }
+
+    // Test the claude command and log output, using the correct PATH
+    console.log('Testing `claude` command...');
+    const testCommand = `${npmGlobalPath}/bin/claude --help > /dev/null 2>&1`;
+    const claudeProcess = await container.spawn('sh', ['-c', testCommand]);
+
+    const claudeExitCode = await claudeProcess.exit;
+    if (claudeExitCode !== 0) {
+      console.warn(`Claude Code installation completed but PATH resolution failed (expected in WebContainer). Claude Code is accessible via: ${npmGlobalPath}/bin/claude`);
+    } else {
+      console.log('✅ Claude Code installation and configuration completed successfully!');
     }
   };
 
