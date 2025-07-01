@@ -11,13 +11,16 @@
     "start": "node server.js"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.55.1",
+    "@google/genai": "^1.7.0",
     "@monaco-editor/react": "^4.7.0",
     "@octokit/rest": "^22.0.0",
     "@tailwindcss/vite": "^4.1.11",
     "@webcontainer/api": "^1.1.8",
     "express": "^4.21.2",
     "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+    "react-dom": "^19.1.0",
+    "react-markdown": "^10.1.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.29.0",

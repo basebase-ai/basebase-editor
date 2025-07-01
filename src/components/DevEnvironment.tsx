@@ -2,8 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { WebContainer } from '@webcontainer/api';
 import { Octokit } from '@octokit/rest';
 import WebContainerManager from '../utils/webcontainer-manager';
-import FileExplorer from './FileExplorer';
-import CodeEditor from './CodeEditor';
+import AiChatPanel from './AiChatPanel';
 import PreviewPane from './PreviewPane';
 import PublishModal from './PublishModal';
 
@@ -12,13 +11,7 @@ interface DevEnvironmentProps {
   repoUrl: string;
 }
 
-interface FileNode {
-  name: string;
-  type: 'file' | 'directory';
-  path: string;
-  children?: FileNode[];
-  content?: string;
-}
+
 
 interface ServerInfo {
   url: string;
@@ -28,12 +21,11 @@ interface ServerInfo {
 const DevEnvironment: React.FC<DevEnvironmentProps> = ({ githubToken, repoUrl }) => {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [loadingMessage, setLoadingMessage] = useState<string>('Initializing WebContainer...');
-  const [fileTree, setFileTree] = useState<FileNode[]>([]);
-  const [selectedFile, setSelectedFile] = useState<FileNode | null>(null);
+
   const [serverInfo, setServerInfo] = useState<ServerInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showPublishModal, setShowPublishModal] = useState<boolean>(false);
-  const [modifiedFiles, setModifiedFiles] = useState<Map<string, string>>(new Map());
+  const [modifiedFiles] = useState<Map<string, string>>(new Map());
   const containerRef = useRef<WebContainer | null>(null);
   const initializedRef = useRef<boolean>(false);
 
@@ -112,8 +104,8 @@ const DevEnvironment: React.FC<DevEnvironmentProps> = ({ githubToken, repoUrl })
       setLoadingMessage('Installing dependencies...');
       await installDependencies(container);
 
-      setLoadingMessage('Installing Claude Code...');
-      await installClaudeCode(container);
+      // setLoadingMessage('Installing Claude Code...');
+      // await installClaudeCode(container);
 
       setLoadingMessage('Starting development server...');
       await startDevServer(container);
@@ -242,49 +234,9 @@ const DevEnvironment: React.FC<DevEnvironmentProps> = ({ githubToken, repoUrl })
     }
     
     // Note: WebContainer doesn't have git installed, so we'll use GitHub API for version control
-    
-    // Build file tree for UI
-    const tree = buildFileTree(filesMap);
-    setFileTree(tree);
   };
 
-  const buildFileTree = (filesMap: Map<string, string>): FileNode[] => {
-    const tree: FileNode[] = [];
-    const nodeMap = new Map<string, FileNode>();
 
-    // Create all nodes
-    Array.from(filesMap.keys()).forEach(path => {
-      const parts = path.split('/');
-      let currentPath = '';
-      
-      parts.forEach((part, index) => {
-        const previousPath = currentPath;
-        currentPath = currentPath ? `${currentPath}/${part}` : part;
-        
-        if (!nodeMap.has(currentPath)) {
-          const isFile = index === parts.length - 1 && filesMap.has(path);
-          const node: FileNode = {
-            name: part,
-            type: isFile ? 'file' : 'directory',
-            path: currentPath,
-            children: isFile ? undefined : []
-          };
-          nodeMap.set(currentPath, node);
-          
-          if (previousPath) {
-            const parent = nodeMap.get(previousPath);
-            if (parent && parent.children) {
-              parent.children.push(node);
-            }
-          } else {
-            tree.push(node);
-          }
-        }
-      });
-    });
-
-    return tree;
-  };
 
   const installDependencies = async (container: WebContainer): Promise<void> => {
     const installProcess = await container.spawn('npm', ['install']);
@@ -295,7 +247,7 @@ const DevEnvironment: React.FC<DevEnvironmentProps> = ({ githubToken, repoUrl })
     }
   };
 
-  const installClaudeCode = async (container: WebContainer): Promise<void> => {
+  /* const installClaudeCode = async (container: WebContainer): Promise<void> => {
     // Clean npm cache to prevent EEXIST errors
     console.log('Cleaning npm cache to fix potential EEXIST errors...');
     const cacheCleanProcess = await container.spawn('npm', ['cache', 'clean', '--force']);
@@ -412,7 +364,7 @@ const DevEnvironment: React.FC<DevEnvironmentProps> = ({ githubToken, repoUrl })
     } else {
       console.log('✅ Claude Code installation and configuration completed successfully!');
     }
-  };
+  };*/
 
   const startDevServer = async (container: WebContainer): Promise<void> => {
     // Listen for WebContainer's server-ready events
@@ -461,41 +413,7 @@ const DevEnvironment: React.FC<DevEnvironmentProps> = ({ githubToken, repoUrl })
     }));
   };
 
-  const handleFileSelect = async (file: FileNode): Promise<void> => {
-    if (file.type === 'file' && containerRef.current) {
-      try {
-        console.log('Reading file:', file.path);
-        const content = await containerRef.current.fs.readFile(file.path, 'utf-8');
-        console.log('File content loaded successfully:', file.path, content.length, 'characters');
-        setSelectedFile({ ...file, content });
-      } catch (err) {
-        console.error('Failed to read file:', file.path, err);
-        // Show an error message instead of loading forever
-        const errorContent = `// Error loading file: ${file.path}\n// ${err instanceof Error ? err.message : String(err)}\n\n// Please check the browser console for more details.`;
-        setSelectedFile({ ...file, content: errorContent });
-      }
-    } else {
-      console.log('File selection skipped:', file.type, !!containerRef.current);
-    }
-  };
 
-  const handleFileUpdate = async (path: string, content: string): Promise<void> => {
-    if (containerRef.current) {
-      try {
-        await containerRef.current.fs.writeFile(path, content);
-        
-        // Track modified files
-        setModifiedFiles(prev => new Map(prev.set(path, content)));
-        console.log('📝 File modified:', path);
-        
-        if (selectedFile?.path === path) {
-          setSelectedFile({ ...selectedFile, content });
-        }
-      } catch (err) {
-        console.error('Failed to update file:', err);
-      }
-    }
-  };
 
   if (error) {
     return (
@@ -554,20 +472,10 @@ const DevEnvironment: React.FC<DevEnvironmentProps> = ({ githubToken, repoUrl })
 
       {/* Main content */}
       <div className="flex flex-1 overflow-hidden">
-        {/* File Explorer - Fixed width */}
-        <div className="w-64 flex-shrink-0 bg-white border-r">
-          <FileExplorer 
-            files={fileTree} 
-            onFileSelect={handleFileSelect}
-            selectedFile={selectedFile}
-          />
-        </div>
-
-        {/* Code Editor - Fixed width */}
-        <div className="w-96 flex-shrink-0 bg-white border-r">
-          <CodeEditor 
-            file={selectedFile}
-            onFileUpdate={handleFileUpdate}
+        {/* AI Chat Panel - Fixed 500px width */}
+        <div className="w-[500px] flex-shrink-0 bg-white border-r">
+          <AiChatPanel 
+            webcontainer={containerRef.current}
           />
         </div>
 

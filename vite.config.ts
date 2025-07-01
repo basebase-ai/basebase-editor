@@ -27,6 +27,7 @@ export default defineConfig({
   },
   optimizeDeps: {
     exclude: ["@webcontainer/api"],
+    include: ["@google/genai"],
   },
   // Ensure proper build configuration
   define: {

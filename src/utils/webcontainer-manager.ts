@@ -56,6 +56,85 @@ class WebContainerManager {
   static hasInstance(): boolean {
     return this.instance !== null;
   }
+
+  static async readFile(path: string): Promise<string> {
+    const container = await this.getInstance();
+    return container.fs.readFile(path, "utf-8");
+  }
+
+  static async writeFile(path: string, content: string): Promise<void> {
+    const container = await this.getInstance();
+    await container.fs.writeFile(path, content);
+  }
+
+  static async listFiles(
+    pattern: string,
+    basePath: string = ".",
+    includeHidden: boolean = false
+  ): Promise<string[]> {
+    const container = await this.getInstance();
+    const allFiles: string[] = [];
+
+    // Simple glob to regex for filename matching
+    const globToRegex = (glob: string) => {
+      const regexString = glob
+        .replace(/\./g, "\\.")
+        .replace(/\*/g, ".*")
+        .replace(/\?/g, ".");
+      return new RegExp(`^${regexString}$`);
+    };
+    const re = globToRegex(pattern);
+
+    const readDirRecursive = async (dir: string) => {
+      let entries;
+      try {
+        entries = await container.fs.readdir(dir, { withFileTypes: true });
+      } catch {
+        // Not a directory, or other error. Stop recursion.
+        return;
+      }
+
+      for (const entry of entries) {
+        if (!includeHidden && entry.name.startsWith(".")) {
+          continue;
+        }
+        const fullPath = dir === "." ? entry.name : `${dir}/${entry.name}`;
+        if (entry.isDirectory()) {
+          await readDirRecursive(fullPath);
+        } else if (entry.isFile()) {
+          if (re.test(entry.name)) {
+            allFiles.push(fullPath);
+          }
+        }
+      }
+    };
+
+    await readDirRecursive(basePath);
+    return allFiles;
+  }
+
+  static async runCommand(command: string, args: string[]): Promise<string> {
+    const container = await this.getInstance();
+    const process = await container.spawn(command, args);
+
+    let output = "";
+    const stream = new WritableStream({
+      write(chunk) {
+        output += chunk;
+      },
+    });
+
+    process.output.pipeTo(stream);
+
+    const exitCode = await process.exit;
+    if (exitCode !== 0) {
+      console.warn(
+        `Command "${command} ${args.join(" ")}" exited with code ${exitCode}`
+      );
+    }
+
+    return output;
+  }
 }
 
 export default WebContainerManager;
