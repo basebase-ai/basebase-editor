@@ -19,7 +19,13 @@ interface AiChatPanelProps {
 }
 
 const AiChatPanel: React.FC<AiChatPanelProps> = ({ webcontainer }) => {
-  const [messages, setMessages] = useState<UiMessage[]>([]);
+  const [messages, setMessages] = useState<UiMessage[]>([
+    {
+      id: 'initial-message',
+      role: 'assistant',
+      content: [{ type: 'text', text: 'How would you like to improve this app?' }] as ContentBlock[],
+    }
+  ]);
   const [input, setInput] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [loadingMessage, setLoadingMessage] = useState<string>('');
@@ -551,13 +557,6 @@ Always read files before modifying them. When making changes, explain your reaso
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
-        {messages.length === 0 && (
-          <div className="text-center text-gray-500 mt-8">
-            <div className="text-4xl mb-4">🤖</div>
-            <p>Start chatting with your AI assistant.</p>
-          </div>
-        )}
-        
         {messages.map((message) => (
           <div
             key={message.id}
