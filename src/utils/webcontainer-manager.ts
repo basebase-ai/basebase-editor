@@ -135,6 +135,25 @@ class WebContainerManager {
 
     return output;
   }
+
+  static async runCommandWithEnv(
+    command: string,
+    args: string[],
+    env: Record<string, string> = {}
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  ): Promise<{ process: any; exitCode: Promise<number> }> {
+    const container = await this.getInstance();
+    const spawnedProcess = await container.spawn(command, args, {
+      env: {
+        ...env,
+      },
+    });
+
+    return {
+      process: spawnedProcess,
+      exitCode: spawnedProcess.exit,
+    };
+  }
 }
 
 export default WebContainerManager;

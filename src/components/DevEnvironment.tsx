@@ -9,6 +9,7 @@ import PublishModal from './PublishModal';
 interface DevEnvironmentProps {
   githubToken: string | null;
   repoUrl: string;
+  basebaseToken: string | null;
 }
 
 
@@ -18,7 +19,7 @@ interface ServerInfo {
   port: number;
 }
 
-const DevEnvironment: React.FC<DevEnvironmentProps> = ({ githubToken, repoUrl }) => {
+const DevEnvironment: React.FC<DevEnvironmentProps> = ({ githubToken, repoUrl, basebaseToken }) => {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [loadingMessage, setLoadingMessage] = useState<string>('Initializing WebContainer...');
 
@@ -383,7 +384,14 @@ const DevEnvironment: React.FC<DevEnvironmentProps> = ({ githubToken, repoUrl })
       }
     });
 
-    const devProcess = await container.spawn('npm', ['run', 'dev']);
+    // Prepare environment variables
+    const env: Record<string, string> = {};
+    if (basebaseToken) {
+      env.BASEBASE_TOKEN = basebaseToken;
+      console.log('Setting BASEBASE_TOKEN environment variable');
+    }
+
+    const { process: devProcess } = await WebContainerManager.runCommandWithEnv('npm', ['run', 'dev'], env);
     
     // Listen for server ready in output as backup
     devProcess.output.pipeTo(new WritableStream({

@@ -6,6 +6,7 @@ import WebContainerManager from './utils/webcontainer-manager';
 interface AppState {
   githubToken: string | null;
   repoUrl: string | null;
+  basebaseToken: string | null;
   showAuth: boolean;
 }
 
@@ -13,18 +14,36 @@ const App: React.FC = () => {
   const [state, setState] = useState<AppState>({
     githubToken: null,
     repoUrl: null,
+    basebaseToken: null,
     showAuth: false
   });
 
   useEffect(() => {
-    // Parse repo URL from query parameters
+    // Parse repo URL and token from query parameters
     const urlParams = new URLSearchParams(window.location.search);
     const repoParam = urlParams.get('repo');
+    const tokenParam = urlParams.get('token');
     
     if (!repoParam) {
       // Show error if no repo specified
       setState(prev => ({ ...prev, repoUrl: null }));
       return;
+    }
+
+    // Handle Basebase token if provided
+    let basebaseToken: string | null = null;
+    if (tokenParam) {
+      // Store token locally
+      localStorage.setItem('basebase_token', tokenParam);
+      basebaseToken = tokenParam;
+      
+      // Remove token from URL immediately for security
+      const newUrl = new URL(window.location.href);
+      newUrl.searchParams.delete('token');
+      window.history.replaceState({}, document.title, newUrl.toString());
+    } else {
+      // Check if we have a saved token
+      basebaseToken = localStorage.getItem('basebase_token');
     }
 
     // Check if we have a GitHub token
@@ -34,6 +53,7 @@ const App: React.FC = () => {
       ...prev,
       repoUrl: repoParam,
       githubToken: savedToken,
+      basebaseToken,
       showAuth: !savedToken
     }));
 
@@ -98,6 +118,7 @@ const App: React.FC = () => {
     <DevEnvironment 
       githubToken={state.githubToken}
       repoUrl={state.repoUrl}
+      basebaseToken={state.basebaseToken}
     />
   );
 };
