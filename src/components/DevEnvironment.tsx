@@ -389,9 +389,12 @@ const DevEnvironment: React.FC<DevEnvironmentProps> = ({ githubToken, repoUrl, b
   };*/
 
   const startDevServer = async (container: WebContainer): Promise<void> => {
+    let hasWebContainerUrl = false; // Track if we have a WebContainer URL
+    
     // Listen for WebContainer's server-ready events
     container.on('server-ready', (port: number, url: string) => {
       console.log('WebContainer server-ready event:', { port, url });
+      hasWebContainerUrl = true; // Mark that we have a WebContainer URL
       handleServerReady({ url, port });
       setIsLoading(false);
     });
@@ -400,6 +403,7 @@ const DevEnvironment: React.FC<DevEnvironmentProps> = ({ githubToken, repoUrl, b
     container.on('port', (port: number, type: 'open' | 'close', url: string) => {
       console.log('WebContainer port event:', { port, type, url });
       if (type === 'open') {
+        hasWebContainerUrl = true; // Mark that we have a WebContainer URL
         handleServerReady({ url, port });
         setIsLoading(false);
       }
@@ -841,17 +845,19 @@ module.exports = nextConfig;
         addLog(data, logType);
         
         // Look for various Vite/Next.js output patterns
-        const patterns = [
-          /Local:\s+http:\/\/localhost:(\d+)/,
-          /localhost:(\d+)/,
-          /Local.*?:(\d+)/,
-          /ready in.*localhost:(\d+)/i,
-          /dev server running at.*localhost:(\d+)/i,
-          /ready on.*localhost:(\d+)/i,
-          /started server on.*:(\d+)/i,
-        ];
-        
-                  for (const pattern of patterns) {
+        // Only use localhost URLs if we don't already have a WebContainer URL
+        if (!hasWebContainerUrl) {
+          const patterns = [
+            /Local:\s+http:\/\/localhost:(\d+)/,
+            /localhost:(\d+)/,
+            /Local.*?:(\d+)/,
+            /ready in.*localhost:(\d+)/i,
+            /dev server running at.*localhost:(\d+)/i,
+            /ready on.*localhost:(\d+)/i,
+            /started server on.*:(\d+)/i,
+          ];
+          
+          for (const pattern of patterns) {
             const match = data.match(pattern);
             if (match) {
               const detectedPort = parseInt(match[1]);
@@ -861,6 +867,22 @@ module.exports = nextConfig;
               return;
             }
           }
+        } else {
+          // We already have a WebContainer URL, just log the detection for debugging
+          const patterns = [
+            /Local:\s+http:\/\/localhost:(\d+)/,
+            /localhost:(\d+)/,
+          ];
+          
+          for (const pattern of patterns) {
+            const match = data.match(pattern);
+            if (match) {
+              const detectedPort = parseInt(match[1]);
+              console.log('Server detected on port:', detectedPort, '(ignoring localhost URL, using WebContainer URL)');
+              return;
+            }
+          }
+        }
       }
     }));
   };
