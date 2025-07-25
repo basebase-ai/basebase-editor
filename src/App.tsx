@@ -56,10 +56,11 @@ const App: React.FC = () => {
     }
 
     // Remove sensitive parameters from URL immediately for security
-    if (tokenParam || projectParam) {
+    // Keep project param for better UX, but remove token (sensitive) and repo (long URL)
+    if (tokenParam || repoParam) {
       const newUrl = new URL(window.location.href);
       if (tokenParam) newUrl.searchParams.delete('token');
-      if (projectParam) newUrl.searchParams.delete('project');
+      if (repoParam) newUrl.searchParams.delete('repo');
       window.history.replaceState({}, document.title, newUrl.toString());
     }
 
