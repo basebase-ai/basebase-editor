@@ -173,6 +173,13 @@ const DevEnvironment: React.FC<DevEnvironmentProps> = ({ githubToken, repoUrl, b
       directory: FileSystemTree;
     }
 
+    interface TreeEntry {
+      file?: {
+        contents: string | Uint8Array;
+      };
+      directory?: FileSystemTree;
+    }
+
     const filesMap = new Map<string, string | Uint8Array>();
     
     // Helper function to recursively get all files from a directory
@@ -275,16 +282,17 @@ const DevEnvironment: React.FC<DevEnvironmentProps> = ({ githubToken, repoUrl, b
         for (const [key, value] of Object.entries(tree)) {
           const fullPath = currentPath ? `${currentPath}/${key}` : key;
           
-          if (value && typeof value === 'object') {
-            if ('file' in value && (value as any).file?.contents) {
-              const contents = (value as any).file.contents;
+          const entry = value as TreeEntry;
+          if (entry && typeof entry === 'object') {
+            if ('file' in entry && entry.file?.contents) {
+              const contents = entry.file.contents;
               
               // Only rewrite binary files (images)
               if (contents instanceof Uint8Array && key.match(/\.(png|jpg|jpeg|gif|svg|ico|webp|avif)$/i)) {
                 await container.fs.writeFile(fullPath, contents);
               }
-            } else if ('directory' in value) {
-              await rewriteBinaryFiles((value as any).directory, fullPath);
+            } else if ('directory' in entry && entry.directory) {
+              await rewriteBinaryFiles(entry.directory, fullPath);
             }
           }
         }
@@ -452,20 +460,7 @@ const DevEnvironment: React.FC<DevEnvironmentProps> = ({ githubToken, repoUrl, b
       }
     });
 
-    // Create .env.local file to help with asset resolution
-    try {
-      const envContent = `# Asset serving configuration for WebContainer
-VITE_BASE_URL=/
-PUBLIC_URL=/
-VITE_ASSET_URL=/
-# Allow loading assets from the dev server
-VITE_DEV_SERVER_CORS=true
-`;
-      await container.fs.writeFile('.env.local', envContent);
-      console.log('Created .env.local for better asset serving');
-    } catch (error) {
-      console.warn('Failed to create .env.local:', error);
-    }
+
 
     // Create .stackblitzrc to enable CORS proxy (requires subscription)
     try {
@@ -555,44 +550,93 @@ export default defineConfig({
           }
         });
         
-        // Simple image proxy for external images
+        // Enhanced image proxy for external images
         server.middlewares.use('/api/proxy-image', async (req, res) => {
           try {
             const url = new URL(req.url || '', 'http://localhost');
             const imageUrl = url.searchParams.get('url');
             
+            console.log('🖼️ Image proxy request:', imageUrl);
+            
             if (!imageUrl) {
+              console.error('❌ Image proxy: Missing url parameter');
               res.statusCode = 400;
+              res.setHeader('Content-Type', 'application/json');
               res.end(JSON.stringify({ error: 'Missing url parameter' }));
               return;
             }
 
-            const response = await fetch(imageUrl);
+            // Validate URL format
+            let targetUrl: URL;
+            try {
+              targetUrl = new URL(imageUrl);
+            } catch (urlError) {
+              console.error('❌ Image proxy: Invalid URL format:', imageUrl);
+              res.statusCode = 400;
+              res.setHeader('Content-Type', 'application/json');
+              res.end(JSON.stringify({ error: 'Invalid URL format' }));
+              return;
+            }
+
+            // Security: Only allow http/https protocols
+            if (!['http:', 'https:'].includes(targetUrl.protocol)) {
+              console.error('❌ Image proxy: Invalid protocol:', targetUrl.protocol);
+              res.statusCode = 400;
+              res.setHeader('Content-Type', 'application/json');
+              res.end(JSON.stringify({ error: 'Only HTTP/HTTPS URLs are allowed' }));
+              return;
+            }
+
+            console.log('🔗 Fetching image from:', targetUrl.href);
+            const response = await fetch(targetUrl.href, {
+              headers: {
+                'User-Agent': 'WebContainer-ImageProxy/1.0'
+              }
+            });
             
             if (!response.ok) {
+              console.error(\`❌ Image proxy: HTTP \${response.status} from \${targetUrl.href}\`);
               res.statusCode = response.status;
-              res.end(JSON.stringify({ error: \`Failed to fetch image: \${response.status}\` }));
+              res.setHeader('Content-Type', 'application/json');
+              res.end(JSON.stringify({ 
+                error: \`Failed to fetch image: \${response.status} \${response.statusText}\`,
+                url: imageUrl
+              }));
               return;
             }
 
             // Copy headers and set CORP header
             const contentType = response.headers.get('content-type') || 'image/*';
+            const contentLength = response.headers.get('content-length');
+            
+            console.log(\`✅ Image proxy: Successfully fetched \${contentType} (\${contentLength || 'unknown size'})\`);
+            
             res.setHeader('Content-Type', contentType);
             res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+            res.setHeader('Access-Control-Allow-Origin', '*');
             res.setHeader('Cache-Control', 'public, max-age=3600');
+            
+            if (contentLength) {
+              res.setHeader('Content-Length', contentLength);
+            }
             
             // Stream the image
             if (response.body) {
               const reader = response.body.getReader();
               
-              const pump = async () => {
-                const { done, value } = await reader.read();
-                if (done) {
+              const pump = async (): Promise<void> => {
+                try {
+                  const { done, value } = await reader.read();
+                  if (done) {
+                    res.end();
+                    return;
+                  }
+                  res.write(Buffer.from(value));
+                  return pump();
+                } catch (streamError) {
+                  console.error('❌ Image proxy: Stream error:', streamError);
                   res.end();
-                  return;
                 }
-                res.write(Buffer.from(value));
-                return pump();
               };
               
               await pump();
@@ -600,11 +644,27 @@ export default defineConfig({
               res.end();
             }
           } catch (error) {
-            console.error('Image proxy error:', error);
-                         res.statusCode = 500;
-             res.end(JSON.stringify({ error: 'Proxy error' }));
-           }
-         });
+            console.error('❌ Image proxy error:', error);
+            res.statusCode = 500;
+            res.setHeader('Content-Type', 'application/json');
+            res.end(JSON.stringify({ 
+              error: 'Internal proxy error',
+              details: error instanceof Error ? error.message : 'Unknown error'
+            }));
+          }
+        });
+        
+        // Test endpoint for debugging
+        server.middlewares.use('/api/test-proxy', (req, res) => {
+          res.setHeader('Content-Type', 'application/json');
+          res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+          res.end(JSON.stringify({
+            message: 'Image proxy is working!',
+            timestamp: new Date().toISOString(),
+            proxyUrl: '/api/proxy-image?url=https://example.com/image.jpg',
+            instructions: 'Use /api/proxy-image?url=<encoded-image-url> to proxy external images'
+          }));
+        });
       }
     },
     {
@@ -628,8 +688,8 @@ export default defineConfig({
           '<head>',
           \`<head>
     <script>
-      // WebContainer Image Loading Helper
-      console.log('🖼️ WebContainer Image Helper loaded');
+      // WebContainer Image Loading Helper - Enhanced Version
+      console.log('🖼️ WebContainer Image Helper v2.0 loaded');
       
       // Function to proxy external images
       window.proxyImageUrl = function(originalUrl) {
@@ -642,6 +702,11 @@ export default defineConfig({
             return originalUrl;
           }
           
+          // Skip data URLs and blob URLs
+          if (originalUrl.startsWith('data:') || originalUrl.startsWith('blob:')) {
+            return originalUrl;
+          }
+          
           // Use proxy for external URLs
           return \`/api/proxy-image?url=\${encodeURIComponent(originalUrl)}\`;
         } catch {
@@ -650,56 +715,132 @@ export default defineConfig({
         }
       };
       
-      // Auto-fix image sources that fail to load
-      window.fixBrokenImages = function() {
-        const images = document.querySelectorAll('img');
-        let fixed = 0;
+      // Pre-process all images before they load
+      window.preProcessImages = function() {
+        const images = document.querySelectorAll('img:not([data-proxy-processed])');
+        let processed = 0;
         
         images.forEach(img => {
-          if (img.hasAttribute('data-proxy-fixed')) return;
+          img.setAttribute('data-proxy-processed', 'true');
           
+          // If src is external, proxy it immediately
+          if (img.src && !img.src.startsWith(window.location.origin) && 
+              !img.src.startsWith('data:') && !img.src.startsWith('blob:') &&
+              !img.src.includes('/api/proxy-image')) {
+            console.log('🔧 Pre-processing external image:', img.src);
+            img.src = window.proxyImageUrl(img.src);
+            processed++;
+          }
+          
+          // Also check srcset
+          if (img.srcset) {
+            const srcsetParts = img.srcset.split(',').map(part => {
+              const [url, ...rest] = part.trim().split(' ');
+              if (url && !url.startsWith(window.location.origin) && 
+                  !url.startsWith('data:') && !url.startsWith('blob:') &&
+                  !url.includes('/api/proxy-image')) {
+                return window.proxyImageUrl(url) + (rest.length ? ' ' + rest.join(' ') : '');
+              }
+              return part;
+            });
+            img.srcset = srcsetParts.join(', ');
+          }
+          
+          // Add error handler as backup
           img.addEventListener('error', function() {
+            if (this.hasAttribute('data-proxy-retry')) return;
+            
+            this.setAttribute('data-proxy-retry', 'true');
             const originalSrc = this.src;
             if (originalSrc && !originalSrc.includes('/api/proxy-image')) {
-              console.log('🔧 Fixing broken image:', originalSrc);
+              console.log('🔧 Retry fixing broken image:', originalSrc);
               this.src = window.proxyImageUrl(originalSrc);
-              this.setAttribute('data-proxy-fixed', 'true');
-              fixed++;
             }
           }, { once: true });
         });
         
-        return fixed;
+        console.log(\`✅ Pre-processed \${processed} external images\`);
+        return processed;
       };
+      
+      // Enhanced auto-fix for broken images
+      window.fixBrokenImages = function() {
+        return window.preProcessImages();
+      };
+      
+             // Override Image constructor to automatically proxy external URLs
+       const OriginalImage = window.Image;
+       window.Image = function(width?: number, height?: number): HTMLImageElement {
+         const img = new OriginalImage(width, height);
+         
+         // Override src setter
+         let _src = '';
+         Object.defineProperty(img, 'src', {
+           get: function() { return _src; },
+           set: function(value: string) {
+             _src = value;
+             const proxiedUrl = window.proxyImageUrl(value);
+             (OriginalImage.prototype as HTMLImageElement).src.call(this, proxiedUrl);
+           }
+         });
+         
+         return img;
+       } as typeof Image;
+      
+      // Copy static properties
+      Object.setPrototypeOf(window.Image, OriginalImage);
+      Object.setPrototypeOf(window.Image.prototype, OriginalImage.prototype);
       
       // Auto-fix on DOM ready and mutations
       if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', window.fixBrokenImages);
+        document.addEventListener('DOMContentLoaded', window.preProcessImages);
       } else {
-        window.fixBrokenImages();
+        window.preProcessImages();
       }
       
-      // Watch for new images
+      // Watch for new images and external URL changes
       if (typeof MutationObserver !== 'undefined') {
         const observer = new MutationObserver((mutations) => {
+          let needsProcessing = false;
+          
           mutations.forEach((mutation) => {
+            // Check for new nodes
             mutation.addedNodes.forEach((node) => {
               if (node.nodeType === 1) {
                 if (node.tagName === 'IMG') {
-                  window.fixBrokenImages();
+                  needsProcessing = true;
                 } else if (node.querySelectorAll) {
                   const images = node.querySelectorAll('img');
                   if (images.length > 0) {
-                    window.fixBrokenImages();
+                    needsProcessing = true;
                   }
                 }
               }
             });
+            
+            // Check for attribute changes on img elements
+            if (mutation.type === 'attributes' && 
+                mutation.target.tagName === 'IMG' &&
+                (mutation.attributeName === 'src' || mutation.attributeName === 'srcset')) {
+              needsProcessing = true;
+            }
           });
+          
+          if (needsProcessing) {
+            // Small delay to batch multiple changes
+            setTimeout(window.preProcessImages, 10);
+          }
         });
         
-        observer.observe(document.body, { childList: true, subtree: true });
+        observer.observe(document.body, { 
+          childList: true, 
+          subtree: true, 
+          attributes: true,
+          attributeFilter: ['src', 'srcset']
+        });
       }
+      
+      console.log('✅ Enhanced image proxy system initialized');
     </script>\`
         );
       }
@@ -924,11 +1065,11 @@ export const config = {
     const env: Record<string, string> = {};
     if (basebaseToken) {
       env.BASEBASE_TOKEN = basebaseToken;
-      console.log('Setting BASEBASE_TOKEN environment variable');
+      console.log('Setting BASEBASE_TOKEN environment variable to ' + basebaseToken);
     }
     if (basebaseProject) {
       env.BASEBASE_PROJECT = basebaseProject;
-      console.log('Setting BASEBASE_PROJECT environment variable');
+      console.log('Setting BASEBASE_PROJECT environment variable to ' + basebaseProject);
     }
 
     // Add WebContainer-specific environment variables to fix build issues
@@ -952,6 +1093,43 @@ export const config = {
     env.COEP = 'require-corp';
     env.CORP = 'cross-origin';
     console.log('Set WebContainer-optimized environment variables with CORS support');
+
+    // Create .env.local file BEFORE starting the dev server so Next.js can read the variables
+    try {
+      let envContent = `# Asset serving configuration for WebContainer
+VITE_BASE_URL=/
+PUBLIC_URL=/
+VITE_ASSET_URL=/
+# Allow loading assets from the dev server
+VITE_DEV_SERVER_CORS=true
+`;
+
+      // Add Basebase environment variables if available (with NEXT_PUBLIC_ prefix for client-side access)
+      if (basebaseToken) {
+        envContent += `\n# Basebase authentication
+BASEBASE_TOKEN=${basebaseToken}
+NEXT_PUBLIC_BASEBASE_TOKEN=${basebaseToken}
+`;
+      }
+      if (basebaseProject) {
+        envContent += `BASEBASE_PROJECT=${basebaseProject}
+NEXT_PUBLIC_BASEBASE_PROJECT=${basebaseProject}
+`;
+      }
+
+      await container.fs.writeFile('.env.local', envContent);
+      console.log('✅ Created .env.local BEFORE starting dev server');
+      if (basebaseProject) {
+        console.log('✅ Added BASEBASE_PROJECT to .env.local:', basebaseProject);
+        addLog(`Added BASEBASE_PROJECT environment variable: ${basebaseProject}`, 'info');
+      }
+      if (basebaseToken) {
+        console.log('✅ Added BASEBASE_TOKEN to .env.local');
+        addLog('Added BASEBASE_TOKEN environment variable', 'info');
+      }
+    } catch (error) {
+      console.warn('Failed to create .env.local:', error);
+    }
 
     const { process: devProcess } = await WebContainerManager.runCommandWithEnv('npm', ['run', 'dev'], env);
     
