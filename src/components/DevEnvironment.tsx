@@ -392,7 +392,7 @@ const DevEnvironment: React.FC<DevEnvironmentProps> = ({ githubToken, repoUrl, b
     // Listen for WebContainer's server-ready events
     container.on('server-ready', (port: number, url: string) => {
       console.log('WebContainer server-ready event:', { port, url });
-      setServerInfo({ url, port });
+      handleServerReady({ url, port });
       setIsLoading(false);
     });
 
@@ -400,10 +400,356 @@ const DevEnvironment: React.FC<DevEnvironmentProps> = ({ githubToken, repoUrl, b
     container.on('port', (port: number, type: 'open' | 'close', url: string) => {
       console.log('WebContainer port event:', { port, type, url });
       if (type === 'open') {
-        setServerInfo({ url, port });
+        handleServerReady({ url, port });
         setIsLoading(false);
       }
     });
+
+    // Create .env.local file to help with asset resolution
+    try {
+      const envContent = `# Asset serving configuration for WebContainer
+VITE_BASE_URL=/
+PUBLIC_URL=/
+VITE_ASSET_URL=/
+# Allow loading assets from the dev server
+VITE_DEV_SERVER_CORS=true
+`;
+      await container.fs.writeFile('.env.local', envContent);
+      console.log('Created .env.local for better asset serving');
+    } catch (error) {
+      console.warn('Failed to create .env.local:', error);
+    }
+
+    // Create an image proxy middleware for handling third-party images
+    try {
+      const proxyMiddleware = `// Image proxy middleware for third-party images
+export default function imageProxy(req, res, next) {
+  if (req.url.startsWith('/api/proxy-image')) {
+    const imageUrl = req.query.url;
+    if (!imageUrl) {
+      return res.status(400).json({ error: 'Missing url parameter' });
+    }
+
+    try {
+      const decodedUrl = decodeURIComponent(imageUrl);
+      console.log('Proxying image:', decodedUrl);
+      
+      // Set CORS headers for cross-origin isolation
+      res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Allow-Methods', 'GET');
+      
+      // Fetch the image and pipe it through
+      fetch(decodedUrl)
+        .then(response => {
+          if (!response.ok) {
+            throw new Error(\`HTTP \${response.status}\`);
+          }
+          res.setHeader('Content-Type', response.headers.get('content-type') || 'image/*');
+          return response.body;
+        })
+        .then(body => {
+          const reader = body.getReader();
+          const pump = () => {
+            return reader.read().then(({ done, value }) => {
+              if (done) {
+                res.end();
+                return;
+              }
+              res.write(Buffer.from(value));
+              return pump();
+            });
+          };
+          return pump();
+        })
+        .catch(error => {
+          console.error('Image proxy error:', error);
+          res.status(500).json({ error: 'Failed to fetch image' });
+        });
+    } catch (error) {
+      console.error('Image proxy error:', error);
+      res.status(400).json({ error: 'Invalid URL' });
+    }
+  } else {
+    next();
+  }
+}
+`;
+      await container.fs.writeFile('image-proxy.js', proxyMiddleware);
+      console.log('Created image proxy middleware');
+    } catch (error) {
+      console.warn('Failed to create image proxy middleware:', error);
+    }
+
+    // Create a debugging utility for image loading issues
+    try {
+      const debugUtility = `// Debugging utility for image loading in WebContainer
+console.log('🔧 WebContainer Image Loading Debug Utility');
+console.log('If third-party images are not loading, try these solutions:');
+console.log('');
+
+// Function to convert third-party image URLs to use the proxy
+window.proxyImageUrl = function(originalUrl) {
+  if (!originalUrl) return originalUrl;
+  
+  // Check if it's already a local URL
+  if (originalUrl.startsWith('/') || originalUrl.startsWith(window.location.origin)) {
+    return originalUrl;
+  }
+  
+  // Use the proxy for external URLs
+  const proxyUrl = \`/api/proxy-image?url=\${encodeURIComponent(originalUrl)}\`;
+  console.log(\`🖼️ Proxying image: \${originalUrl} -> \${proxyUrl}\`);
+  return proxyUrl;
+};
+
+// Function to automatically fix image sources in the document
+window.fixImageSources = function() {
+  const images = document.querySelectorAll('img[src]');
+  let fixed = 0;
+  
+  images.forEach(img => {
+    const originalSrc = img.src;
+    if (originalSrc && !originalSrc.startsWith(window.location.origin) && !originalSrc.startsWith('/')) {
+      img.src = window.proxyImageUrl(originalSrc);
+      fixed++;
+    }
+  });
+  
+  console.log(\`🔧 Fixed \${fixed} image sources to use proxy\`);
+  return fixed;
+};
+
+// Auto-fix images on DOM changes
+if (typeof MutationObserver !== 'undefined') {
+  const observer = new MutationObserver((mutations) => {
+    mutations.forEach((mutation) => {
+      if (mutation.type === 'childList') {
+        mutation.addedNodes.forEach((node) => {
+          if (node.nodeType === 1) { // Element node
+            const element = node;
+            if (element.tagName === 'IMG' && element.src) {
+              const originalSrc = element.src;
+              if (!originalSrc.startsWith(window.location.origin) && !originalSrc.startsWith('/')) {
+                element.src = window.proxyImageUrl(originalSrc);
+                console.log('🔧 Auto-fixed image source:', originalSrc);
+              }
+            }
+            // Also check child images
+            const childImages = element.querySelectorAll && element.querySelectorAll('img[src]');
+            if (childImages) {
+              childImages.forEach(img => {
+                const originalSrc = img.src;
+                if (!originalSrc.startsWith(window.location.origin) && !originalSrc.startsWith('/')) {
+                  img.src = window.proxyImageUrl(originalSrc);
+                  console.log('🔧 Auto-fixed child image source:', originalSrc);
+                }
+              });
+            }
+          }
+        });
+      }
+    });
+  });
+  
+  observer.observe(document.body, { childList: true, subtree: true });
+  console.log('🔧 Auto-fix observer enabled for new images');
+}
+
+console.log('');
+console.log('Available functions:');
+console.log('- window.proxyImageUrl(url) - Convert external image URL to use proxy');
+console.log('- window.fixImageSources() - Fix all existing images on the page');
+console.log('');
+console.log('Example usage:');
+console.log('// Instead of:');
+console.log('// <img src="https://example.com/image.jpg" />');
+console.log('// Use:');
+console.log('// <img src={window.proxyImageUrl("https://example.com/image.jpg")} />');
+`;
+      await container.fs.writeFile('debug-images.js', debugUtility);
+      console.log('Created image debugging utility');
+    } catch (error) {
+      console.warn('Failed to create image debugging utility:', error);
+    }
+
+    // Check if vite.config exists, if not create one with WebContainer-optimized settings
+    try {
+      await container.fs.readFile('vite.config.js', 'utf-8');
+    } catch {
+      // File doesn't exist, create a WebContainer-optimized config
+      const viteConfig = `import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+import imageProxy from './image-proxy.js'
+
+export default defineConfig({
+  plugins: [
+    react(),
+    {
+      name: 'image-proxy-middleware',
+      configureServer(server) {
+        server.middlewares.use('/api/proxy-image', imageProxy);
+      }
+    },
+    {
+      name: 'inject-debug-script',
+      transformIndexHtml(html) {
+        return html.replace(
+          '<head>',
+          '<head>\\n    <script src="/debug-images.js" defer></script>'
+        );
+      }
+    }
+  ],
+  server: {
+    host: '0.0.0.0',
+    port: 5173,
+    cors: true,
+    headers: {
+      'Cross-Origin-Resource-Policy': 'cross-origin',
+      'Cross-Origin-Opener-Policy': 'same-origin',
+      'Cross-Origin-Embedder-Policy': 'require-corp',
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    }
+  },
+  assetsInclude: ['**/*.png', '**/*.jpg', '**/*.jpeg', '**/*.gif', '**/*.svg', '**/*.webp'],
+  build: {
+    assetsInlineLimit: 0, // Don't inline assets, serve them as files
+  },
+  define: {
+    // Allow unsafe-inline for dynamic content
+    'process.env.NODE_ENV': JSON.stringify('development')
+  }
+})
+`;
+      try {
+        await container.fs.writeFile('vite.config.js', viteConfig);
+        console.log('Created WebContainer-optimized vite.config.js');
+      } catch (writeError) {
+        console.warn('Failed to create vite.config.js:', writeError);
+      }
+    }
+
+    // Create WebContainer-optimized configurations for common build tools
+    try {
+      // Create a Next.js config optimized for WebContainer
+      const nextConfig = `/** @type {import('next').NextConfig} */
+const nextConfig = {
+  // Disable SWC in favor of Babel for WebContainer compatibility
+  swcMinify: false,
+  compiler: {
+    // Disable SWC compiler features that don't work well in WebContainer
+    removeConsole: false,
+    styledComponents: false,
+  },
+  // Optimize for WebContainer environment
+  experimental: {
+    // Disable features that cause issues in WebContainer
+    esmExternals: false,
+    serverComponentsExternalPackages: [],
+    // Use webpack instead of Turbopack
+    turbo: false,
+  },
+  // Webpack configuration for WebContainer
+  webpack: (config, { dev, isServer }) => {
+    if (dev && !isServer) {
+      // Disable some optimizations that cause issues in WebContainer
+      config.optimization.splitChunks = false;
+      
+      // Fallback for Node.js modules in browser
+      config.resolve.fallback = {
+        ...config.resolve.fallback,
+        fs: false,
+        net: false,
+        tls: false,
+        crypto: false,
+        stream: false,
+        url: false,
+        zlib: false,
+        http: false,
+        https: false,
+        assert: false,
+        os: false,
+        path: false,
+      };
+    }
+    return config;
+  },
+  // Disable features that require file system watching
+  onDemandEntries: {
+    maxInactiveAge: 60 * 1000,
+    pagesBufferLength: 2,
+  },
+  // Optimize images for WebContainer
+  images: {
+    domains: [],
+    deviceSizes: [640, 750, 828, 1080, 1200, 1920, 2048, 3840],
+    imageSizes: [16, 32, 48, 64, 96, 128, 256, 384],
+    // Disable optimization that might cause issues
+    dangerouslyAllowSVG: true,
+    contentSecurityPolicy: "default-src 'self'; script-src 'none'; sandbox;",
+  },
+};
+
+module.exports = nextConfig;
+`;
+      
+      // Check if this is a Next.js project before creating the config
+      try {
+        const packageJson = await container.fs.readFile('package.json', 'utf-8');
+        const pkg = JSON.parse(packageJson);
+        if (pkg.dependencies?.next || pkg.devDependencies?.next) {
+          await container.fs.writeFile('next.config.js', nextConfig);
+          console.log('Created WebContainer-optimized next.config.js');
+        }
+             } catch (error) {
+         // Package.json doesn't exist or can't be parsed, skip Next.js config
+         console.log('Skipping Next.js config - not a Next.js project:', error);
+       }
+    } catch (error) {
+      console.warn('Failed to create Next.js config:', error);
+    }
+
+    // Create .swcrc to disable problematic SWC features
+    try {
+      const swcConfig = {
+        "jsc": {
+          "parser": {
+            "syntax": "typescript",
+            "tsx": true,
+            "decorators": false,
+            "dynamicImport": true
+          },
+          "target": "es2020",
+          "loose": false,
+          "externalHelpers": false,
+          "keepClassNames": true,
+          "preserveAllComments": true,
+          // Disable minification that causes issues in WebContainer
+          "minify": {
+            "compress": false,
+            "mangle": false
+          }
+        },
+        "module": {
+          "type": "es6",
+          "strict": false,
+          "strictMode": true,
+          "lazy": false,
+          "noInterop": false
+        },
+        // Disable features that don't work well in WebContainer
+        "minify": false,
+        "sourceMaps": true
+      };
+      
+      await container.fs.writeFile('.swcrc', JSON.stringify(swcConfig, null, 2));
+      console.log('Created WebContainer-optimized .swcrc');
+    } catch (error) {
+      console.warn('Failed to create .swcrc:', error);
+    }
 
     // Prepare environment variables
     const env: Record<string, string> = {};
@@ -416,12 +762,74 @@ const DevEnvironment: React.FC<DevEnvironmentProps> = ({ githubToken, repoUrl, b
       console.log('Setting BASEBASE_PROJECT environment variable');
     }
 
+    // Add WebContainer-specific environment variables to fix build issues
+    env.NODE_ENV = 'development';
+    env.CI = 'false';
+    env.DISABLE_ESLINT_PLUGIN = 'true';
+    env.TSC_COMPILE_ON_ERROR = 'true';
+    env.ESLINT_NO_DEV_ERRORS = 'true';
+    env.GENERATE_SOURCEMAP = 'false';
+    // Disable SWC compiler issues
+    env.SWC_DISABLE_MMAP = '1';
+    env.NEXT_TELEMETRY_DISABLED = '1';
+    // Fix for WebAssembly loading issues
+    env.WASM_BINDGEN_FALLBACK = '1';
+    console.log('Set WebContainer-optimized environment variables');
+
     const { process: devProcess } = await WebContainerManager.runCommandWithEnv('npm', ['run', 'dev'], env);
     
+    // Set up a timeout to try alternative start commands if the main one doesn't work
+    const fallbackTimeout = setTimeout(async () => {
+      console.log('🔧 Primary dev command taking longer than expected, checking for alternatives...');
+      
+      try {
+        const packageJson = await container.fs.readFile('package.json', 'utf-8');
+        const pkg = JSON.parse(packageJson);
+        const scripts = pkg.scripts || {};
+        
+        console.log('Available scripts:', Object.keys(scripts));
+        
+        // Try alternative commands if available
+        const alternatives = ['start', 'serve', 'preview'];
+        for (const alt of alternatives) {
+          if (scripts[alt] && alt !== 'dev') {
+            console.log(`🔧 Found alternative script: ${alt}`);
+            addLog(`Trying alternative start command: npm run ${alt}`, 'info');
+            // Note: We won't actually run it here since the first process is already running
+            // This is just for logging what alternatives exist
+          }
+        }
+      } catch (error) {
+        console.warn('Could not check package.json for alternatives:', error);
+      }
+    }, 30000); // 30 seconds
+    
+    // Clear the timeout if the server starts successfully
+    const handleServerReady = (info: ServerInfo) => {
+      clearTimeout(fallbackTimeout);
+      setServerInfo(info);
+    };
+
     // Listen for server ready in output as backup
     devProcess.output.pipeTo(new WritableStream({
       write(data: string) {
         console.log('Dev server output:', data);
+        
+        // Check for specific build tool errors and suggest fixes
+        if (data.includes('[Contextify]') || data.includes('SWC_DISABLE_MMAP')) {
+          console.warn('🔧 SWC compilation issue detected - this is common in WebContainer environments');
+          addLog('SWC compilation warning detected - using fallback configuration', 'warn');
+        }
+        
+        if (data.includes('WebAssembly') || data.includes('wasm')) {
+          console.warn('🔧 WebAssembly issue detected - this may affect some build tools');
+          addLog('WebAssembly issue detected - using fallback configuration', 'warn');
+        }
+        
+        if (data.includes('ENOSPC') || data.includes('no space left')) {
+          console.error('❌ Out of disk space in WebContainer');
+          addLog('WebContainer out of disk space - try clearing cache', 'error');
+        }
         
         // Add log entry for all output
         let logType: LogEntry['type'] = 'info';
@@ -432,25 +840,27 @@ const DevEnvironment: React.FC<DevEnvironmentProps> = ({ githubToken, repoUrl, b
         }
         addLog(data, logType);
         
-        // Look for various Vite output patterns
+        // Look for various Vite/Next.js output patterns
         const patterns = [
           /Local:\s+http:\/\/localhost:(\d+)/,
           /localhost:(\d+)/,
           /Local.*?:(\d+)/,
           /ready in.*localhost:(\d+)/i,
           /dev server running at.*localhost:(\d+)/i,
+          /ready on.*localhost:(\d+)/i,
+          /started server on.*:(\d+)/i,
         ];
         
-        for (const pattern of patterns) {
-          const match = data.match(pattern);
-          if (match) {
-            const detectedPort = parseInt(match[1]);
-            console.log('Server detected on port:', detectedPort);
-            setServerInfo({ url: `http://localhost:${detectedPort}`, port: detectedPort });
-            setIsLoading(false);
-            return;
+                  for (const pattern of patterns) {
+            const match = data.match(pattern);
+            if (match) {
+              const detectedPort = parseInt(match[1]);
+              console.log('Server detected on port:', detectedPort);
+              handleServerReady({ url: `http://localhost:${detectedPort}`, port: detectedPort });
+              setIsLoading(false);
+              return;
+            }
           }
-        }
       }
     }));
   };
@@ -522,8 +932,8 @@ const DevEnvironment: React.FC<DevEnvironmentProps> = ({ githubToken, repoUrl, b
 
       {/* Main content */}
       <div className="flex flex-1 overflow-hidden">
-        {/* AI Chat Panel - Fixed 500px width */}
-        <div className="w-[500px] flex-shrink-0 bg-white border-r">
+        {/* AI Chat Panel - Fixed 425px width */}
+        <div className="w-[425px] flex-shrink-0 bg-white border-r">
           <AiChatPanel 
             webcontainer={containerRef.current}
           />

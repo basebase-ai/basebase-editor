@@ -340,7 +340,7 @@ Always read files before modifying them. When making changes, explain your reaso
     console.log(`🤖 [Google] Sending request to Gemini with tools...`);
 
     let response = await google.models.generateContent({
-      model: "gemini-2.5-flash",
+      model: "gemini-2.0-flash-lite",
       contents: fullPrompt,
       config: {
         tools: [{

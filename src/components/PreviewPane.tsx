@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 
 interface ServerInfo {
   url: string;
@@ -12,35 +12,107 @@ interface PreviewPaneProps {
 const PreviewPane: React.FC<PreviewPaneProps> = ({ serverInfo }) => {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [hasError, setHasError] = useState<boolean>(false);
+  const [retryCount, setRetryCount] = useState<number>(0);
+  const [isRetrying, setIsRetrying] = useState<boolean>(false);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const retryTimeoutRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (serverInfo) {
       console.log('Preview pane serverInfo changed:', serverInfo);
       setIsLoading(true);
       setHasError(false);
+      setRetryCount(0);
+      setIsRetrying(false);
+      
+      // Clear any existing retry timeout
+      if (retryTimeoutRef.current) {
+        clearTimeout(retryTimeoutRef.current);
+        retryTimeoutRef.current = null;
+      }
     }
   }, [serverInfo]);
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (retryTimeoutRef.current) {
+        clearTimeout(retryTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  const checkServerHealth = async (url: string): Promise<boolean> => {
+    try {
+      await fetch(url, { 
+        method: 'GET',
+        mode: 'no-cors', // Avoid CORS issues for health check
+        cache: 'no-cache'
+      });
+      return true; // If fetch doesn't throw, server is responding
+    } catch (error) {
+      console.log('Server health check failed:', error);
+      return false;
+    }
+  };
+
+  const refreshPreview = (): void => {
+    setIsLoading(true);
+    setHasError(false);
+    setIsRetrying(false);
+    // Force iframe reload by changing its src
+    if (iframeRef.current && serverInfo) {
+      const currentSrc = iframeRef.current.src;
+      iframeRef.current.src = '';
+      iframeRef.current.src = currentSrc;
+    }
+  };
+
+  const scheduleRetry = (): void => {
+    if (!serverInfo || retryCount >= 10) return; // Max 10 retries
+    
+    setIsRetrying(true);
+    const delay = Math.min(1000 + retryCount * 500, 5000); // Exponential backoff, max 5s
+    
+    console.log(`🔄 Scheduling retry ${retryCount + 1} in ${delay}ms`);
+    
+    retryTimeoutRef.current = window.setTimeout(async () => {
+      if (!serverInfo) return;
+      
+      console.log(`🔍 Checking if server is ready (attempt ${retryCount + 1})`);
+      const isHealthy = await checkServerHealth(serverInfo.url);
+      
+      if (isHealthy) {
+        console.log('✅ Server is ready, refreshing iframe');
+        setRetryCount(prev => prev + 1);
+        setIsRetrying(false);
+        refreshPreview();
+      } else {
+        console.log('❌ Server not ready yet, will retry');
+        setRetryCount(prev => prev + 1);
+        scheduleRetry();
+      }
+    }, delay);
+  };
 
   const handleIframeLoad = (): void => {
     console.log('Preview iframe loaded successfully');
     setIsLoading(false);
+    
+    // Note: Cannot add iframe error listeners due to cross-origin restrictions
+    // The iframe is running on a different origin (WebContainer) than the parent frame
+    console.log('✅ Iframe loaded - cross-origin restrictions prevent deeper error monitoring');
   };
 
   const handleIframeError = (): void => {
     console.log('Preview iframe error occurred');
     setIsLoading(false);
     setHasError(true);
-  };
-
-  const refreshPreview = (): void => {
-    setIsLoading(true);
-    setHasError(false);
-    // Force iframe reload by changing its src
-    const iframe = document.getElementById('preview-iframe') as HTMLIFrameElement;
-    if (iframe && serverInfo) {
-      const currentSrc = iframe.src;
-      iframe.src = '';
-      iframe.src = currentSrc;
+    
+    // Automatically start retry process if server might not be ready yet
+    if (serverInfo && retryCount < 10) {
+      console.log('🔄 Starting automatic retry process');
+      scheduleRetry();
     }
   };
 
@@ -81,13 +153,19 @@ const PreviewPane: React.FC<PreviewPaneProps> = ({ serverInfo }) => {
           <div className="h-full flex items-center justify-center text-gray-500">
             <div className="text-center">
               <div className="text-4xl mb-4">⚠️</div>
-              <p className="text-sm mb-4">Failed to load preview</p>
-              <button
-                onClick={refreshPreview}
-                className="bg-blue-500 text-white px-4 py-2 rounded text-sm hover:bg-blue-600"
-              >
-                Try Again
-              </button>
+              <p className="text-sm mb-4">
+                {isRetrying ? `Retrying connection (attempt ${retryCount}/10)...` : 'Failed to load preview'}
+              </p>
+              {isRetrying ? (
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto mb-4"></div>
+              ) : (
+                <button
+                  onClick={refreshPreview}
+                  className="bg-blue-500 text-white px-4 py-2 rounded text-sm hover:bg-blue-600"
+                >
+                  Try Again
+                </button>
+              )}
             </div>
           </div>
         ) : (
@@ -101,12 +179,15 @@ const PreviewPane: React.FC<PreviewPaneProps> = ({ serverInfo }) => {
               </div>
             )}
             <iframe
-              id="preview-iframe"
+              ref={iframeRef}
               src={serverInfo.url}
               className="w-full h-full border-0"
               onLoad={handleIframeLoad}
               onError={handleIframeError}
               title="App Preview"
+              allow="cross-origin-isolated; autoplay; camera; microphone; geolocation; fullscreen; picture-in-picture"
+              referrerPolicy="origin-when-cross-origin"
+              loading="eager"
               // Remove sandbox for WebContainer content - it's already isolated
             />
           </>

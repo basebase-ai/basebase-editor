@@ -27,8 +27,19 @@ const App: React.FC = () => {
     const tokenParam = urlParams.get('token');
     const projectParam = urlParams.get('project');
     
-    if (!repoParam) {
-      // Show error if no repo specified
+    // Handle repository URL
+    let repoUrl: string | null = null;
+    if (repoParam) {
+      // Store repo locally and use it
+      localStorage.setItem('basebase_repo', repoParam);
+      repoUrl = repoParam;
+    } else {
+      // Check if we have a saved repo
+      repoUrl = localStorage.getItem('basebase_repo');
+    }
+
+    if (!repoUrl) {
+      // Show error if no repo specified and none saved
       setState(prev => ({ ...prev, repoUrl: null }));
       return;
     }
@@ -69,7 +80,7 @@ const App: React.FC = () => {
     
     setState(prev => ({
       ...prev,
-      repoUrl: repoParam,
+      repoUrl,
       githubToken: savedToken,
       basebaseToken,
       basebaseProject,
