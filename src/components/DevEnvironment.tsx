@@ -5,6 +5,7 @@ import WebContainerManager from '../utils/webcontainer-manager';
 import AiChatPanel from './AiChatPanel';
 import PreviewPane from './PreviewPane';
 import PublishModal from './PublishModal';
+import LogsModal from './LogsModal';
 
 interface DevEnvironmentProps {
   githubToken: string | null;
@@ -12,7 +13,11 @@ interface DevEnvironmentProps {
   basebaseToken: string | null;
 }
 
-
+interface LogEntry {
+  timestamp: Date;
+  message: string;
+  type: 'info' | 'error' | 'warn';
+}
 
 interface ServerInfo {
   url: string;
@@ -26,9 +31,24 @@ const DevEnvironment: React.FC<DevEnvironmentProps> = ({ githubToken, repoUrl, b
   const [serverInfo, setServerInfo] = useState<ServerInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showPublishModal, setShowPublishModal] = useState<boolean>(false);
+  const [showLogsModal, setShowLogsModal] = useState<boolean>(false);
+  const [logs, setLogs] = useState<LogEntry[]>([]);
   const [modifiedFiles] = useState<Map<string, string>>(new Map());
   const containerRef = useRef<WebContainer | null>(null);
   const initializedRef = useRef<boolean>(false);
+
+  const addLog = (message: string, type: LogEntry['type'] = 'info'): void => {
+    const newLog: LogEntry = {
+      timestamp: new Date(),
+      message: message.trim(),
+      type
+    };
+    setLogs(prevLogs => [...prevLogs, newLog]);
+  };
+
+  const clearLogs = (): void => {
+    setLogs([]);
+  };
 
   useEffect(() => {
     if (initializedRef.current) {
@@ -398,6 +418,15 @@ const DevEnvironment: React.FC<DevEnvironmentProps> = ({ githubToken, repoUrl, b
       write(data: string) {
         console.log('Dev server output:', data);
         
+        // Add log entry for all output
+        let logType: LogEntry['type'] = 'info';
+        if (data.toLowerCase().includes('error') || data.toLowerCase().includes('failed')) {
+          logType = 'error';
+        } else if (data.toLowerCase().includes('warn') || data.toLowerCase().includes('warning')) {
+          logType = 'warn';
+        }
+        addLog(data, logType);
+        
         // Look for various Vite output patterns
         const patterns = [
           /Local:\s+http:\/\/localhost:(\d+)/,
@@ -470,12 +499,20 @@ const DevEnvironment: React.FC<DevEnvironmentProps> = ({ githubToken, repoUrl, b
             {repoUrl.replace('https://github.com/', '')}
           </div>
         </div>
-        <button
-          onClick={() => setShowPublishModal(true)}
-          className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors"
-        >
-          Publish Changes
-        </button>
+        <div className="flex items-center space-x-3">
+          <button
+            onClick={() => setShowLogsModal(true)}
+            className="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors"
+          >
+            Logs
+          </button>
+          <button
+            onClick={() => setShowPublishModal(true)}
+            className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors"
+          >
+            Publish Changes
+          </button>
+        </div>
       </div>
 
       {/* Main content */}
@@ -502,6 +539,14 @@ const DevEnvironment: React.FC<DevEnvironmentProps> = ({ githubToken, repoUrl, b
           onClose={() => setShowPublishModal(false)}
         />
       )}
+
+      {/* Logs Modal */}
+      <LogsModal
+        logs={logs}
+        isOpen={showLogsModal}
+        onClose={() => setShowLogsModal(false)}
+        onClearLogs={clearLogs}
+      />
     </div>
   );
 };
