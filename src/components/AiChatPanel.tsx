@@ -43,12 +43,21 @@ const AiChatPanel: React.FC<AiChatPanelProps> = ({ webcontainer }) => {
     : null;
 
   const scrollToBottom = (): void => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    // Use setTimeout to ensure DOM has been updated
+    setTimeout(() => {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }, 100);
   };
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages]);
+  }, [messages, isLoading]); // Also scroll when loading state changes
+
+  // Additional effect to scroll when new content is added (like during streaming responses)
+  useEffect(() => {
+    const timer = setTimeout(scrollToBottom, 200);
+    return () => clearTimeout(timer);
+  }, [messages.length]);
 
   const getSystemPrompt = async (): Promise<string> => {
     const files = await WebContainerManager.listFiles('*', '.', true);
@@ -70,7 +79,7 @@ WORKFLOW:
 3. Make targeted changes with write_file
 4. Verify changes with run_command (lint/test)
 
-Always read files before modifying them. When making changes, explain your reasoning and check for errors afterward.`;
+Always read files before modifying them. When making changes, explain your reasoning and check for errors afterward. Please be as concise as possible, summarizing your ideas, your approach, and your completed work in a few lines at a time.`;
   };
   
   const sendMessage = async (): Promise<void> => {
@@ -146,6 +155,21 @@ Always read files before modifying them. When making changes, explain your reaso
           input_schema: { type: 'object', properties: { pattern: { type: 'string' }, include_hidden: { type: 'boolean' } }, required: ['pattern'] },
         },
         {
+          name: 'grep_search',
+          description: 'Search for text patterns across all files in the repository',
+          input_schema: { 
+            type: 'object', 
+            properties: { 
+              pattern: { type: 'string', description: 'The text pattern to search for' },
+              case_sensitive: { type: 'boolean', description: 'Whether the search should be case sensitive (default: false)' },
+              whole_words: { type: 'boolean', description: 'Whether to match whole words only (default: false)' },
+              file_pattern: { type: 'string', description: 'File pattern to limit search scope (e.g., "*.js", "*.tsx")' },
+              max_results: { type: 'number', description: 'Maximum number of results to return (default: 100)' }
+            }, 
+            required: ['pattern'] 
+          },
+        },
+        {
           name: 'run_command',
           description: 'Execute commands (lint, test, build)',
           input_schema: { type: 'object', properties: { command: { type: 'string' }, args: { type: 'array', items: { type: 'string' } } }, required: ['command', 'args'] },
@@ -176,6 +200,9 @@ Always read files before modifying them. When making changes, explain your reaso
           } else if (name === 'list_files') {
             setLoadingMessage('Listing files...');
             console.log(`🔧 [Tool] Listing files with pattern: ${toolInput.pattern}`);
+          } else if (name === 'grep_search') {
+            setLoadingMessage('Searching files...');
+            console.log(`🔧 [Tool] Searching for pattern: ${toolInput.pattern}`);
           } else if (name === 'run_command') {
             setLoadingMessage('Running command...');
             console.log(`🔧 [Tool] Running command: ${toolInput.command} ${Array.isArray(toolInput.args) ? toolInput.args.join(' ') : ''}`);
@@ -194,6 +221,15 @@ Always read files before modifying them. When making changes, explain your reaso
               const files = await WebContainerManager.listFiles(toolInput.pattern, '.', includeHidden);
               toolOutput = files.join('\n');
               console.log(`🔧 [Tool] Found ${files.length} files matching pattern: ${toolInput.pattern}`);
+            } else if (name === 'grep_search' && typeof toolInput.pattern === 'string') {
+              const options = {
+                caseSensitive: typeof toolInput.case_sensitive === 'boolean' ? toolInput.case_sensitive : false,
+                wholeWords: typeof toolInput.whole_words === 'boolean' ? toolInput.whole_words : false,
+                filePattern: typeof toolInput.file_pattern === 'string' ? toolInput.file_pattern : "*",
+                maxResults: typeof toolInput.max_results === 'number' ? toolInput.max_results : 100,
+              };
+              toolOutput = await WebContainerManager.grepSearch(toolInput.pattern, options);
+              console.log(`🔧 [Tool] Search completed for pattern: ${toolInput.pattern}`);
             } else if (name === 'run_command' && typeof toolInput.command === 'string' && Array.isArray(toolInput.args)) {
               toolOutput = await WebContainerManager.runCommand(toolInput.command, toolInput.args as string[]);
               console.log(`🔧 [Tool] Command completed with ${toolOutput?.length || 0} characters of output`);
@@ -224,12 +260,13 @@ Always read files before modifying them. When making changes, explain your reaso
           max_tokens: 4096,
           system: systemPrompt,
           messages: newApiMessages,
-          tools: [
-            { name: 'read_file', description: 'Read the contents of a file', input_schema: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] } },
-            { name: 'write_file', description: 'Write/update a file', input_schema: { type: 'object', properties: { path: { type: 'string' }, content: { type: 'string' } }, required: ['path', 'content'] } },
-            { name: 'list_files', description: 'List files in directory (with glob patterns)', input_schema: { type: 'object', properties: { pattern: { type: 'string' }, include_hidden: { type: 'boolean' } }, required: ['pattern'] } },
-            { name: 'run_command', description: 'Execute commands (lint, test, build)', input_schema: { type: 'object', properties: { command: { type: 'string' }, args: { type: 'array', items: { type: 'string' } } }, required: ['command', 'args'] } },
-          ],
+                  tools: [
+          { name: 'read_file', description: 'Read the contents of a file', input_schema: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] } },
+          { name: 'write_file', description: 'Write/update a file', input_schema: { type: 'object', properties: { path: { type: 'string' }, content: { type: 'string' } }, required: ['path', 'content'] } },
+          { name: 'list_files', description: 'List files in directory (with glob patterns)', input_schema: { type: 'object', properties: { pattern: { type: 'string' }, include_hidden: { type: 'boolean' } }, required: ['pattern'] } },
+          { name: 'grep_search', description: 'Search for text patterns across all files in the repository', input_schema: { type: 'object', properties: { pattern: { type: 'string' }, case_sensitive: { type: 'boolean' }, whole_words: { type: 'boolean' }, file_pattern: { type: 'string' }, max_results: { type: 'number' } }, required: ['pattern'] } },
+          { name: 'run_command', description: 'Execute commands (lint, test, build)', input_schema: { type: 'object', properties: { command: { type: 'string' }, args: { type: 'array', items: { type: 'string' } } }, required: ['command', 'args'] } },
+        ],
       });
       
       newApiMessages.push({role: apiResponse.role, content: apiResponse.content });
@@ -306,6 +343,37 @@ Always read files before modifying them. When making changes, explain your reaso
       }
     };
 
+    const grepSearchDeclaration = {
+      name: 'grep_search',
+      description: 'Search for text patterns across all files in the repository',
+      parameters: {
+        type: Type.OBJECT,
+        properties: {
+          pattern: {
+            type: Type.STRING,
+            description: 'The text pattern to search for'
+          },
+          case_sensitive: {
+            type: Type.BOOLEAN,
+            description: 'Whether the search should be case sensitive (default: false)'
+          },
+          whole_words: {
+            type: Type.BOOLEAN,
+            description: 'Whether to match whole words only (default: false)'
+          },
+          file_pattern: {
+            type: Type.STRING,
+            description: 'File pattern to limit search scope (e.g., "*.js", "*.tsx")'
+          },
+          max_results: {
+            type: Type.NUMBER,
+            description: 'Maximum number of results to return (default: 100)'
+          }
+        },
+        required: ['pattern']
+      }
+    };
+
     const runCommandDeclaration = {
       name: 'run_command',
       description: 'Execute commands (lint, test, build)',
@@ -326,7 +394,7 @@ Always read files before modifying them. When making changes, explain your reaso
       }
     };
 
-    const functionDeclarations = [readFileDeclaration, writeFileDeclaration, listFilesDeclaration, runCommandDeclaration];
+    const functionDeclarations = [readFileDeclaration, writeFileDeclaration, listFilesDeclaration, grepSearchDeclaration, runCommandDeclaration];
 
     // Build the conversation history for Gemini
     const conversationHistory = apiMessages.map(msg => {
@@ -340,7 +408,7 @@ Always read files before modifying them. When making changes, explain your reaso
     console.log(`🤖 [Google] Sending request to Gemini with tools...`);
 
     let response = await google.models.generateContent({
-      model: "gemini-2.0-flash-lite",
+      model: "gemini-2.0-flash",
       contents: fullPrompt,
       config: {
         tools: [{
@@ -370,6 +438,9 @@ Always read files before modifying them. When making changes, explain your reaso
         } else if (name === 'list_files') {
           setLoadingMessage('Listing files...');
           console.log(`🔧 [Tool] Listing files with pattern: ${args?.pattern}`);
+        } else if (name === 'grep_search') {
+          setLoadingMessage('Searching files...');
+          console.log(`🔧 [Tool] Searching for pattern: ${args?.pattern}`);
         } else if (name === 'run_command') {
           setLoadingMessage('Running command...');
           console.log(`🔧 [Tool] Running command: ${args?.command} ${Array.isArray(args?.args) ? args.args.join(' ') : ''}`);
@@ -388,6 +459,15 @@ Always read files before modifying them. When making changes, explain your reaso
             const files = await WebContainerManager.listFiles(args.pattern, '.', includeHidden);
             toolOutput = files.join('\n');
             console.log(`🔧 [Tool] Found ${files.length} files matching pattern: ${args.pattern}`);
+          } else if (name === 'grep_search' && typeof args?.pattern === 'string') {
+            const options = {
+              caseSensitive: typeof args?.case_sensitive === 'boolean' ? args.case_sensitive : false,
+              wholeWords: typeof args?.whole_words === 'boolean' ? args.whole_words : false,
+              filePattern: typeof args?.file_pattern === 'string' ? args.file_pattern : "*",
+              maxResults: typeof args?.max_results === 'number' ? args.max_results : 100,
+            };
+            toolOutput = await WebContainerManager.grepSearch(args.pattern, options);
+            console.log(`🔧 [Tool] Search completed for pattern: ${args.pattern}`);
           } else if (name === 'run_command' && typeof args?.command === 'string' && Array.isArray(args?.args)) {
             toolOutput = await WebContainerManager.runCommand(args.command, args.args as string[]);
             console.log(`🔧 [Tool] Command completed with ${toolOutput?.length || 0} characters of output`);
@@ -411,7 +491,7 @@ Always read files before modifying them. When making changes, explain your reaso
       const toolResultsPrompt = `${fullPrompt}\n\nTool execution results:\n${toolResults.join('\n\n')}\n\nPlease provide your response based on the tool results above.`;
       
       response = await google.models.generateContent({
-        model: "gemini-2.5-flash",
+        model: "gemini-2.0-flash",
         contents: toolResultsPrompt,
         config: {
           tools: [{
@@ -556,7 +636,7 @@ Always read files before modifying them. When making changes, explain your reaso
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-3">
+      <div className="flex-1 overflow-y-auto p-4 space-y-3 scroll-smooth">
         {messages.map((message) => (
           <div
             key={message.id}

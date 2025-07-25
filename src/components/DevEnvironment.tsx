@@ -1122,7 +1122,7 @@ export const config = {
   }
 
   return (
-    <div className="min-h-screen bg-gray-100 flex flex-col">
+    <div className="h-screen bg-gray-100 flex flex-col">
       {/* Header */}
       <div className="bg-white shadow-sm border-b flex items-center justify-between px-6 py-3">
         <div className="flex items-center space-x-3">
@@ -1148,16 +1148,16 @@ export const config = {
       </div>
 
       {/* Main content */}
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex flex-1 overflow-hidden h-0">
         {/* AI Chat Panel - Fixed 425px width */}
-        <div className="w-[425px] flex-shrink-0 bg-white border-r">
+        <div className="w-[425px] flex-shrink-0 bg-white border-r h-full">
           <AiChatPanel 
             webcontainer={containerRef.current}
           />
         </div>
 
         {/* Preview Pane - Takes remaining space */}
-        <div className="flex-1 bg-white">
+        <div className="flex-1 bg-white h-full">
           <PreviewPane serverInfo={serverInfo} />
         </div>
       </div>
