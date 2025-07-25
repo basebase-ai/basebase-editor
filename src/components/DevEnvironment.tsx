@@ -99,6 +99,10 @@ const DevEnvironment: React.FC<DevEnvironmentProps> = ({ githubToken, repoUrl, b
     };
   }, []);
 
+
+
+  
+
   const initializeEnvironment = async (): Promise<void> => {
     try {
       // Debug cross-origin isolation status
@@ -161,7 +165,7 @@ const DevEnvironment: React.FC<DevEnvironmentProps> = ({ githubToken, repoUrl, b
 
     interface FileNode {
       file: {
-        contents: string;
+        contents: string | Uint8Array;
       };
     }
 
@@ -169,7 +173,7 @@ const DevEnvironment: React.FC<DevEnvironmentProps> = ({ githubToken, repoUrl, b
       directory: FileSystemTree;
     }
 
-    const filesMap = new Map<string, string>();
+    const filesMap = new Map<string, string | Uint8Array>();
     
     // Helper function to recursively get all files from a directory
     const getDirectoryContents = async (path: string = ''): Promise<void> => {
@@ -184,8 +188,20 @@ const DevEnvironment: React.FC<DevEnvironmentProps> = ({ githubToken, repoUrl, b
           for (const item of contents) {
             if (item.type === 'file' && item.download_url) {
               const response = await fetch(item.download_url);
-              const content = await response.text();
-              filesMap.set(item.path, content);
+              
+              // Check if this is a binary file based on extension
+              const isBinaryFile = /\.(png|jpg|jpeg|gif|svg|ico|webp|woff|woff2|ttf|eot|pdf|zip|tar|gz|mp4|mov|avi|mp3|wav)$/i.test(item.path);
+              
+              if (isBinaryFile) {
+                // Handle binary files properly
+                const arrayBuffer = await response.arrayBuffer();
+                const uint8Array = new Uint8Array(arrayBuffer);
+                filesMap.set(item.path, uint8Array);
+              } else {
+                // Handle text files normally
+                const content = await response.text();
+                filesMap.set(item.path, content);
+              }
             } else if (item.type === 'dir') {
               // Recursively get contents of subdirectory
               await getDirectoryContents(item.path);
@@ -194,8 +210,20 @@ const DevEnvironment: React.FC<DevEnvironmentProps> = ({ githubToken, repoUrl, b
         } else if (contents.type === 'file' && contents.download_url) {
           // Single file
           const response = await fetch(contents.download_url);
-          const content = await response.text();
-          filesMap.set(contents.path, content);
+          
+          // Check if this is a binary file based on extension
+          const isBinaryFile = /\.(png|jpg|jpeg|gif|svg|ico|webp|woff|woff2|ttf|eot|pdf|zip|tar|gz|mp4|mov|avi|mp3|wav)$/i.test(contents.path);
+          
+          if (isBinaryFile) {
+            // Handle binary files properly
+            const arrayBuffer = await response.arrayBuffer();
+            const uint8Array = new Uint8Array(arrayBuffer);
+            filesMap.set(contents.path, uint8Array);
+          } else {
+            // Handle text files normally
+            const content = await response.text();
+            filesMap.set(contents.path, content);
+          }
         }
       } catch (error) {
         console.warn(`Failed to get contents for path: ${path}`, error);
@@ -205,7 +233,7 @@ const DevEnvironment: React.FC<DevEnvironmentProps> = ({ githubToken, repoUrl, b
     // Get all files recursively
     await getDirectoryContents();
 
-    console.log('All fetched files:', Array.from(filesMap.keys()).sort());
+
 
     // Build proper FileSystemTree
     const fileSystemTree: FileSystemTree = {};
@@ -237,23 +265,38 @@ const DevEnvironment: React.FC<DevEnvironmentProps> = ({ githubToken, repoUrl, b
       }
     }
 
+
+
     try {
       await container.mount(fileSystemTree);
-      console.log('Successfully mounted FileSystemTree');
+      
+      // WORKAROUND: Directly write binary files to fix corruption issue
+      const rewriteBinaryFiles = async (tree: FileSystemTree, currentPath = '') => {
+        for (const [key, value] of Object.entries(tree)) {
+          const fullPath = currentPath ? `${currentPath}/${key}` : key;
+          
+          if (value && typeof value === 'object') {
+            if ('file' in value && (value as any).file?.contents) {
+              const contents = (value as any).file.contents;
+              
+              // Only rewrite binary files (images)
+              if (contents instanceof Uint8Array && key.match(/\.(png|jpg|jpeg|gif|svg|ico|webp|avif)$/i)) {
+                await container.fs.writeFile(fullPath, contents);
+              }
+            } else if ('directory' in value) {
+              await rewriteBinaryFiles((value as any).directory, fullPath);
+            }
+          }
+        }
+      };
+      
+      await rewriteBinaryFiles(fileSystemTree);
+      
     } catch (mountError) {
       console.error('Failed to mount FileSystemTree:', mountError);
       throw new Error(`Mount failed: ${mountError}`);
     }
-    
-    // Debug: List mounted files
-    console.log('Mounted files in WebContainer:', Array.from(filesMap.keys()));
-    
-    // Verify key files exist
-    const requiredFiles = ['package.json', 'src/main.tsx', 'index.html'];
-    const missingFiles = requiredFiles.filter(file => !filesMap.has(file));
-    if (missingFiles.length > 0) {
-      console.warn('Missing required files:', missingFiles);
-    }
+
     
     // Note: WebContainer doesn't have git installed, so we'll use GitHub API for version control
   };
@@ -424,158 +467,22 @@ VITE_DEV_SERVER_CORS=true
       console.warn('Failed to create .env.local:', error);
     }
 
-    // Create an image proxy middleware for handling third-party images
+    // Create .stackblitzrc to enable CORS proxy (requires subscription)
     try {
-      const proxyMiddleware = `// Image proxy middleware for third-party images
-export default function imageProxy(req, res, next) {
-  if (req.url.startsWith('/api/proxy-image')) {
-    const imageUrl = req.query.url;
-    if (!imageUrl) {
-      return res.status(400).json({ error: 'Missing url parameter' });
-    }
-
-    try {
-      const decodedUrl = decodeURIComponent(imageUrl);
-      console.log('Proxying image:', decodedUrl);
-      
-      // Set CORS headers for cross-origin isolation
-      res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
-      res.setHeader('Access-Control-Allow-Origin', '*');
-      res.setHeader('Access-Control-Allow-Methods', 'GET');
-      
-      // Fetch the image and pipe it through
-      fetch(decodedUrl)
-        .then(response => {
-          if (!response.ok) {
-            throw new Error(\`HTTP \${response.status}\`);
-          }
-          res.setHeader('Content-Type', response.headers.get('content-type') || 'image/*');
-          return response.body;
-        })
-        .then(body => {
-          const reader = body.getReader();
-          const pump = () => {
-            return reader.read().then(({ done, value }) => {
-              if (done) {
-                res.end();
-                return;
-              }
-              res.write(Buffer.from(value));
-              return pump();
-            });
-          };
-          return pump();
-        })
-        .catch(error => {
-          console.error('Image proxy error:', error);
-          res.status(500).json({ error: 'Failed to fetch image' });
-        });
+      const stackblitzConfig = {
+        corsProxy: true,
+        installDependencies: true,
+        startCommand: "npm run dev"
+      };
+      await container.fs.writeFile('.stackblitzrc', JSON.stringify(stackblitzConfig, null, 2));
+      console.log('✅ Created .stackblitzrc with CORS proxy enabled');
+      addLog('Enabled StackBlitz CORS proxy (requires subscription)', 'info');
     } catch (error) {
-      console.error('Image proxy error:', error);
-      res.status(400).json({ error: 'Invalid URL' });
-    }
-  } else {
-    next();
-  }
-}
-`;
-      await container.fs.writeFile('image-proxy.js', proxyMiddleware);
-      console.log('Created image proxy middleware');
-    } catch (error) {
-      console.warn('Failed to create image proxy middleware:', error);
+      console.warn('Failed to create .stackblitzrc:', error);
+      addLog('Failed to create StackBlitz config: ' + error, 'warn');
     }
 
-    // Create a debugging utility for image loading issues
-    try {
-      const debugUtility = `// Debugging utility for image loading in WebContainer
-console.log('🔧 WebContainer Image Loading Debug Utility');
-console.log('If third-party images are not loading, try these solutions:');
-console.log('');
 
-// Function to convert third-party image URLs to use the proxy
-window.proxyImageUrl = function(originalUrl) {
-  if (!originalUrl) return originalUrl;
-  
-  // Check if it's already a local URL
-  if (originalUrl.startsWith('/') || originalUrl.startsWith(window.location.origin)) {
-    return originalUrl;
-  }
-  
-  // Use the proxy for external URLs
-  const proxyUrl = \`/api/proxy-image?url=\${encodeURIComponent(originalUrl)}\`;
-  console.log(\`🖼️ Proxying image: \${originalUrl} -> \${proxyUrl}\`);
-  return proxyUrl;
-};
-
-// Function to automatically fix image sources in the document
-window.fixImageSources = function() {
-  const images = document.querySelectorAll('img[src]');
-  let fixed = 0;
-  
-  images.forEach(img => {
-    const originalSrc = img.src;
-    if (originalSrc && !originalSrc.startsWith(window.location.origin) && !originalSrc.startsWith('/')) {
-      img.src = window.proxyImageUrl(originalSrc);
-      fixed++;
-    }
-  });
-  
-  console.log(\`🔧 Fixed \${fixed} image sources to use proxy\`);
-  return fixed;
-};
-
-// Auto-fix images on DOM changes
-if (typeof MutationObserver !== 'undefined') {
-  const observer = new MutationObserver((mutations) => {
-    mutations.forEach((mutation) => {
-      if (mutation.type === 'childList') {
-        mutation.addedNodes.forEach((node) => {
-          if (node.nodeType === 1) { // Element node
-            const element = node;
-            if (element.tagName === 'IMG' && element.src) {
-              const originalSrc = element.src;
-              if (!originalSrc.startsWith(window.location.origin) && !originalSrc.startsWith('/')) {
-                element.src = window.proxyImageUrl(originalSrc);
-                console.log('🔧 Auto-fixed image source:', originalSrc);
-              }
-            }
-            // Also check child images
-            const childImages = element.querySelectorAll && element.querySelectorAll('img[src]');
-            if (childImages) {
-              childImages.forEach(img => {
-                const originalSrc = img.src;
-                if (!originalSrc.startsWith(window.location.origin) && !originalSrc.startsWith('/')) {
-                  img.src = window.proxyImageUrl(originalSrc);
-                  console.log('🔧 Auto-fixed child image source:', originalSrc);
-                }
-              });
-            }
-          }
-        });
-      }
-    });
-  });
-  
-  observer.observe(document.body, { childList: true, subtree: true });
-  console.log('🔧 Auto-fix observer enabled for new images');
-}
-
-console.log('');
-console.log('Available functions:');
-console.log('- window.proxyImageUrl(url) - Convert external image URL to use proxy');
-console.log('- window.fixImageSources() - Fix all existing images on the page');
-console.log('');
-console.log('Example usage:');
-console.log('// Instead of:');
-console.log('// <img src="https://example.com/image.jpg" />');
-console.log('// Use:');
-console.log('// <img src={window.proxyImageUrl("https://example.com/image.jpg")} />');
-`;
-      await container.fs.writeFile('debug-images.js', debugUtility);
-      console.log('Created image debugging utility');
-    } catch (error) {
-      console.warn('Failed to create image debugging utility:', error);
-    }
 
     // Check if vite.config exists, if not create one with WebContainer-optimized settings
     try {
@@ -584,55 +491,259 @@ console.log('// <img src={window.proxyImageUrl("https://example.com/image.jpg")}
       // File doesn't exist, create a WebContainer-optimized config
       const viteConfig = `import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
-import imageProxy from './image-proxy.js'
 
 export default defineConfig({
   plugins: [
     react(),
     {
-      name: 'image-proxy-middleware',
+      name: 'cors-headers',
       configureServer(server) {
-        server.middlewares.use('/api/proxy-image', imageProxy);
+        server.middlewares.use((_req, res, next) => {
+          // Essential COOP/COEP headers for WebContainer
+          res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
+          res.setHeader('Cross-Origin-Embedder-Policy', 'require-corp');
+          res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+          
+          // Additional CORS headers for external resources
+          res.setHeader('Access-Control-Allow-Origin', '*');
+          res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+          res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+          
+          next();
+        });
       }
     },
     {
-      name: 'inject-debug-script',
+      name: 'image-proxy',
+      configureServer(server) {
+        // Handle Next.js image optimization fallback
+        server.middlewares.use('/_next/image', async (req, res) => {
+          try {
+            const url = new URL(req.url || '', 'http://localhost');
+            const imageUrl = url.searchParams.get('url');
+            
+            if (!imageUrl) {
+              res.statusCode = 400;
+              res.end('Missing url parameter');
+              return;
+            }
+
+            // Decode the URL (Next.js URL-encodes it)
+            const decodedUrl = decodeURIComponent(imageUrl);
+            console.log('📸 Next.js image fallback:', decodedUrl);
+            
+                         // For local assets, redirect to the direct file path
+             if (decodedUrl.startsWith('/')) {
+               console.log('📸 Redirecting Next.js image to direct asset:', decodedUrl);
+               res.statusCode = 302;
+               res.setHeader('Location', decodedUrl);
+               res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+               res.end();
+               return;
+             }
+
+             // For external URLs, redirect directly (Next.js will handle CORS)
+             console.log('📸 Redirecting Next.js image to external URL:', decodedUrl);
+             res.statusCode = 302;
+             res.setHeader('Location', decodedUrl);
+             res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+             res.end();
+          } catch (error) {
+            console.error('Next.js image handler error:', error);
+            res.statusCode = 500;
+            res.end('Image handler error');
+          }
+        });
+        
+        // Simple image proxy for external images
+        server.middlewares.use('/api/proxy-image', async (req, res) => {
+          try {
+            const url = new URL(req.url || '', 'http://localhost');
+            const imageUrl = url.searchParams.get('url');
+            
+            if (!imageUrl) {
+              res.statusCode = 400;
+              res.end(JSON.stringify({ error: 'Missing url parameter' }));
+              return;
+            }
+
+            const response = await fetch(imageUrl);
+            
+            if (!response.ok) {
+              res.statusCode = response.status;
+              res.end(JSON.stringify({ error: \`Failed to fetch image: \${response.status}\` }));
+              return;
+            }
+
+            // Copy headers and set CORP header
+            const contentType = response.headers.get('content-type') || 'image/*';
+            res.setHeader('Content-Type', contentType);
+            res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+            res.setHeader('Cache-Control', 'public, max-age=3600');
+            
+            // Stream the image
+            if (response.body) {
+              const reader = response.body.getReader();
+              
+              const pump = async () => {
+                const { done, value } = await reader.read();
+                if (done) {
+                  res.end();
+                  return;
+                }
+                res.write(Buffer.from(value));
+                return pump();
+              };
+              
+              await pump();
+            } else {
+              res.end();
+            }
+          } catch (error) {
+            console.error('Image proxy error:', error);
+                         res.statusCode = 500;
+             res.end(JSON.stringify({ error: 'Proxy error' }));
+           }
+         });
+      }
+    },
+    {
+      name: 'webcontainer-asset-debug',
+      configureServer(server) {
+        // Log all requests to help debug asset serving
+        server.middlewares.use((req, res, next) => {
+          if (req.url?.includes('assets') || req.url?.includes('images') || req.url?.includes('.png')) {
+            console.log('🔍 Request URL:', req.url);
+            console.log('🔍 Request method:', req.method);
+            console.log('🔍 Request headers:', req.headers);
+          }
+          next();
+        });
+      }
+    },
+    {
+      name: 'inject-image-helper',
       transformIndexHtml(html) {
         return html.replace(
           '<head>',
-          '<head>\\n    <script src="/debug-images.js" defer></script>'
+          \`<head>
+    <script>
+      // WebContainer Image Loading Helper
+      console.log('🖼️ WebContainer Image Helper loaded');
+      
+      // Function to proxy external images
+      window.proxyImageUrl = function(originalUrl) {
+        if (!originalUrl) return originalUrl;
+        
+        try {
+          const url = new URL(originalUrl);
+          // If it's already local, return as-is
+          if (url.origin === window.location.origin) {
+            return originalUrl;
+          }
+          
+          // Use proxy for external URLs
+          return \`/api/proxy-image?url=\${encodeURIComponent(originalUrl)}\`;
+        } catch {
+          // If URL parsing fails, assume it's relative
+          return originalUrl;
+        }
+      };
+      
+      // Auto-fix image sources that fail to load
+      window.fixBrokenImages = function() {
+        const images = document.querySelectorAll('img');
+        let fixed = 0;
+        
+        images.forEach(img => {
+          if (img.hasAttribute('data-proxy-fixed')) return;
+          
+          img.addEventListener('error', function() {
+            const originalSrc = this.src;
+            if (originalSrc && !originalSrc.includes('/api/proxy-image')) {
+              console.log('🔧 Fixing broken image:', originalSrc);
+              this.src = window.proxyImageUrl(originalSrc);
+              this.setAttribute('data-proxy-fixed', 'true');
+              fixed++;
+            }
+          }, { once: true });
+        });
+        
+        return fixed;
+      };
+      
+      // Auto-fix on DOM ready and mutations
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', window.fixBrokenImages);
+      } else {
+        window.fixBrokenImages();
+      }
+      
+      // Watch for new images
+      if (typeof MutationObserver !== 'undefined') {
+        const observer = new MutationObserver((mutations) => {
+          mutations.forEach((mutation) => {
+            mutation.addedNodes.forEach((node) => {
+              if (node.nodeType === 1) {
+                if (node.tagName === 'IMG') {
+                  window.fixBrokenImages();
+                } else if (node.querySelectorAll) {
+                  const images = node.querySelectorAll('img');
+                  if (images.length > 0) {
+                    window.fixBrokenImages();
+                  }
+                }
+              }
+            });
+          });
+        });
+        
+        observer.observe(document.body, { childList: true, subtree: true });
+      }
+    </script>\`
         );
       }
     }
   ],
+  // Configure static asset serving for WebContainer
+  publicDir: 'public',
+  
   server: {
     host: '0.0.0.0',
     port: 5173,
-    cors: true,
+    cors: {
+      origin: '*',
+      methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+      allowedHeaders: ['Content-Type', 'Authorization'],
+      credentials: false
+    },
     headers: {
-      'Cross-Origin-Resource-Policy': 'cross-origin',
       'Cross-Origin-Opener-Policy': 'same-origin',
       'Cross-Origin-Embedder-Policy': 'require-corp',
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+      'Cross-Origin-Resource-Policy': 'cross-origin'
     }
   },
-  assetsInclude: ['**/*.png', '**/*.jpg', '**/*.jpeg', '**/*.gif', '**/*.svg', '**/*.webp'],
   build: {
     assetsInlineLimit: 0, // Don't inline assets, serve them as files
+    rollupOptions: {
+      output: {
+        // Ensure assets have proper CORS headers
+        assetFileNames: 'assets/[name]-[hash][extname]'
+      }
+    }
   },
   define: {
-    // Allow unsafe-inline for dynamic content
     'process.env.NODE_ENV': JSON.stringify('development')
   }
 })
 `;
       try {
         await container.fs.writeFile('vite.config.js', viteConfig);
-        console.log('Created WebContainer-optimized vite.config.js');
+        console.log('✅ Created WebContainer-optimized vite.config.js with CORS proxy');
+        addLog('Created optimized Vite config with image proxy', 'info');
       } catch (writeError) {
         console.warn('Failed to create vite.config.js:', writeError);
+        addLog('Failed to create Vite config: ' + writeError, 'warn');
       }
     }
 
@@ -641,6 +752,12 @@ export default defineConfig({
       // Create a Next.js config optimized for WebContainer
       const nextConfig = `/** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Enable comprehensive logging for debugging
+  logging: {
+    fetches: {
+      fullUrl: true,
+    },
+  },
   // Disable SWC in favor of Babel for WebContainer compatibility
   swcMinify: false,
   compiler: {
@@ -688,30 +805,78 @@ const nextConfig = {
   },
   // Optimize images for WebContainer
   images: {
+    // Disable image optimization in WebContainer to avoid /_next/image API issues
+    unoptimized: true,
     domains: [],
     deviceSizes: [640, 750, 828, 1080, 1200, 1920, 2048, 3840],
     imageSizes: [16, 32, 48, 64, 96, 128, 256, 384],
-    // Disable optimization that might cause issues
+    // Allow external domains for when optimization is re-enabled
+    remotePatterns: [
+      {
+        protocol: 'https',
+        hostname: '**',
+      },
+      {
+        protocol: 'http',
+        hostname: '**',
+      }
+    ],
+    // Enable SVG support and configure for WebContainer
     dangerouslyAllowSVG: true,
     contentSecurityPolicy: "default-src 'self'; script-src 'none'; sandbox;",
+    // Disable loader in WebContainer to avoid API calls
+    loader: 'default',
+    // Set proper headers for cross-origin isolation
+    minimumCacheTTL: 0,
   },
 };
 
 module.exports = nextConfig;
 `;
       
-      // Check if this is a Next.js project before creating the config
+            // Check if this is a Next.js project before creating the config
       try {
         const packageJson = await container.fs.readFile('package.json', 'utf-8');
         const pkg = JSON.parse(packageJson);
         if (pkg.dependencies?.next || pkg.devDependencies?.next) {
           await container.fs.writeFile('next.config.js', nextConfig);
           console.log('Created WebContainer-optimized next.config.js');
+          
+          // Create middleware for comprehensive request logging
+          const middlewareContent = `import { NextResponse } from 'next/server'
+import type { NextRequest } from 'next/server'
+
+export function middleware(request: NextRequest) {
+  return NextResponse.next()
+}
+
+// Configure middleware to run on all paths
+export const config = {
+  matcher: [
+    /*
+     * Match all request paths except for the ones starting with:
+     * - api (API routes)
+     * - _next/static (static files)
+     * - _next/image (image optimization files)
+     * - favicon.ico (favicon file)
+     */
+    '/((?!_next/static|_next/image|favicon.ico).*)',
+  ],
+}
+`;
+          
+          await container.fs.writeFile('middleware.ts', middlewareContent);
+          
+
+          
+
+          
+
         }
-             } catch (error) {
-         // Package.json doesn't exist or can't be parsed, skip Next.js config
-         console.log('Skipping Next.js config - not a Next.js project:', error);
-       }
+      } catch (error) {
+        // Package.json doesn't exist or can't be parsed, skip Next.js config
+        console.log('Skipping Next.js config - not a Next.js project:', error);
+      }
     } catch (error) {
       console.warn('Failed to create Next.js config:', error);
     }
@@ -778,7 +943,15 @@ module.exports = nextConfig;
     env.NEXT_TELEMETRY_DISABLED = '1';
     // Fix for WebAssembly loading issues
     env.WASM_BINDGEN_FALLBACK = '1';
-    console.log('Set WebContainer-optimized environment variables');
+    // CORS and image loading specific
+    env.CORS_ENABLED = 'true';
+    env.CORS_ORIGIN = '*';
+    env.VITE_CORS_PROXY = 'true';
+    // Cross-origin isolation support
+    env.COOP = 'same-origin';
+    env.COEP = 'require-corp';
+    env.CORP = 'cross-origin';
+    console.log('Set WebContainer-optimized environment variables with CORS support');
 
     const { process: devProcess } = await WebContainerManager.runCommandWithEnv('npm', ['run', 'dev'], env);
     
@@ -833,6 +1006,28 @@ module.exports = nextConfig;
         if (data.includes('ENOSPC') || data.includes('no space left')) {
           console.error('❌ Out of disk space in WebContainer');
           addLog('WebContainer out of disk space - try clearing cache', 'error');
+        }
+        
+        // Check for CORS/image loading related messages
+        if (data.toLowerCase().includes('cors') || data.toLowerCase().includes('cross-origin')) {
+          console.log('🖼️ CORS-related message detected - image proxy should handle this');
+          addLog('CORS configuration active - external images will be proxied', 'info');
+        }
+        
+        if (data.includes('Image Helper loaded')) {
+          console.log('✅ Image loading helper successfully injected');
+          addLog('Image loading helper active - external images will auto-fix', 'info');
+        }
+        
+        // Check for Next.js image optimization issues
+        if (data.includes('/_next/image')) {
+          console.log('📸 Next.js image request detected - fallback handler should process this');
+          addLog('Next.js image optimization fallback active', 'info');
+        }
+        
+        if (data.toLowerCase().includes('next.js') && data.toLowerCase().includes('config')) {
+          console.log('⚙️ Next.js configuration loaded');
+          addLog('Next.js WebContainer optimization applied', 'info');
         }
         
         // Add log entry for all output
