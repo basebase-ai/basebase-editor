@@ -7,6 +7,7 @@ interface AppState {
   githubToken: string | null;
   repoUrl: string | null;
   basebaseToken: string | null;
+  basebaseProject: string | null;
   showAuth: boolean;
 }
 
@@ -15,14 +16,16 @@ const App: React.FC = () => {
     githubToken: null,
     repoUrl: null,
     basebaseToken: null,
+    basebaseProject: null,
     showAuth: false
   });
 
   useEffect(() => {
-    // Parse repo URL and token from query parameters
+    // Parse repo URL, token, and project from query parameters
     const urlParams = new URLSearchParams(window.location.search);
     const repoParam = urlParams.get('repo');
     const tokenParam = urlParams.get('token');
+    const projectParam = urlParams.get('project');
     
     if (!repoParam) {
       // Show error if no repo specified
@@ -36,14 +39,28 @@ const App: React.FC = () => {
       // Store token locally
       localStorage.setItem('basebase_token', tokenParam);
       basebaseToken = tokenParam;
-      
-      // Remove token from URL immediately for security
-      const newUrl = new URL(window.location.href);
-      newUrl.searchParams.delete('token');
-      window.history.replaceState({}, document.title, newUrl.toString());
     } else {
       // Check if we have a saved token
       basebaseToken = localStorage.getItem('basebase_token');
+    }
+
+    // Handle Basebase project if provided
+    let basebaseProject: string | null = null;
+    if (projectParam) {
+      // Store project locally
+      localStorage.setItem('basebase_project', projectParam);
+      basebaseProject = projectParam;
+    } else {
+      // Check if we have a saved project
+      basebaseProject = localStorage.getItem('basebase_project');
+    }
+
+    // Remove sensitive parameters from URL immediately for security
+    if (tokenParam || projectParam) {
+      const newUrl = new URL(window.location.href);
+      if (tokenParam) newUrl.searchParams.delete('token');
+      if (projectParam) newUrl.searchParams.delete('project');
+      window.history.replaceState({}, document.title, newUrl.toString());
     }
 
     // Check if we have a GitHub token
@@ -54,6 +71,7 @@ const App: React.FC = () => {
       repoUrl: repoParam,
       githubToken: savedToken,
       basebaseToken,
+      basebaseProject,
       showAuth: !savedToken
     }));
 
@@ -119,6 +137,7 @@ const App: React.FC = () => {
       githubToken={state.githubToken}
       repoUrl={state.repoUrl}
       basebaseToken={state.basebaseToken}
+      basebaseProject={state.basebaseProject}
     />
   );
 };

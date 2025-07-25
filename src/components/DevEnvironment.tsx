@@ -11,6 +11,7 @@ interface DevEnvironmentProps {
   githubToken: string | null;
   repoUrl: string;
   basebaseToken: string | null;
+  basebaseProject: string | null;
 }
 
 interface LogEntry {
@@ -24,7 +25,7 @@ interface ServerInfo {
   port: number;
 }
 
-const DevEnvironment: React.FC<DevEnvironmentProps> = ({ githubToken, repoUrl, basebaseToken }) => {
+const DevEnvironment: React.FC<DevEnvironmentProps> = ({ githubToken, repoUrl, basebaseToken, basebaseProject }) => {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [loadingMessage, setLoadingMessage] = useState<string>('Initializing WebContainer...');
 
@@ -409,6 +410,10 @@ const DevEnvironment: React.FC<DevEnvironmentProps> = ({ githubToken, repoUrl, b
     if (basebaseToken) {
       env.BASEBASE_TOKEN = basebaseToken;
       console.log('Setting BASEBASE_TOKEN environment variable');
+    }
+    if (basebaseProject) {
+      env.BASEBASE_PROJECT = basebaseProject;
+      console.log('Setting BASEBASE_PROJECT environment variable');
     }
 
     const { process: devProcess } = await WebContainerManager.runCommandWithEnv('npm', ['run', 'dev'], env);
