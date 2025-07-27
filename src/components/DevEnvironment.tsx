@@ -483,13 +483,21 @@ const DevEnvironment: React.FC<DevEnvironmentProps> = ({ githubToken, repoUrl, b
     try {
       await container.fs.readFile('vite.config.js', 'utf-8');
     } catch {
-      // File doesn't exist, create a WebContainer-optimized config
-      const viteConfig = `import { defineConfig } from 'vite'
+      // Try to copy existing vite.config.ts to vite.config.js
+      try {
+        const existingConfig = await container.fs.readFile('vite.config.ts', 'utf-8');
+        await container.fs.writeFile('vite.config.js', existingConfig);
+        console.log('✅ Copied existing vite.config.ts to vite.config.js');
+      } catch {
+        // No existing config, create a WebContainer-optimized one
+        const viteConfig = `import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import tailwindcss from '@tailwindcss/vite'
 
 export default defineConfig({
   plugins: [
     react(),
+    tailwindcss(),
     {
       name: 'cors-headers',
       configureServer(server) {
@@ -567,7 +575,7 @@ export default defineConfig({
             }
 
             // Validate URL format
-            let targetUrl: URL;
+            let targetUrl;
             try {
               targetUrl = new URL(imageUrl);
             } catch (urlError) {
@@ -595,11 +603,11 @@ export default defineConfig({
             });
             
             if (!response.ok) {
-              console.error(\`❌ Image proxy: HTTP \${response.status} from \${targetUrl.href}\`);
+              console.error('❌ Image proxy: HTTP ' + response.status + ' from ' + targetUrl.href);
               res.statusCode = response.status;
               res.setHeader('Content-Type', 'application/json');
               res.end(JSON.stringify({ 
-                error: \`Failed to fetch image: \${response.status} \${response.statusText}\`,
+                error: 'Failed to fetch image: ' + response.status + ' ' + response.statusText,
                 url: imageUrl
               }));
               return;
@@ -609,7 +617,7 @@ export default defineConfig({
             const contentType = response.headers.get('content-type') || 'image/*';
             const contentLength = response.headers.get('content-length');
             
-            console.log(\`✅ Image proxy: Successfully fetched \${contentType} (\${contentLength || 'unknown size'})\`);
+            console.log('✅ Image proxy: Successfully fetched ' + contentType + ' (' + (contentLength || 'unknown size') + ')');
             
             res.setHeader('Content-Type', contentType);
             res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
@@ -624,7 +632,7 @@ export default defineConfig({
             if (response.body) {
               const reader = response.body.getReader();
               
-              const pump = async (): Promise<void> => {
+              const pump = async () => {
                 try {
                   const { done, value } = await reader.read();
                   if (done) {
@@ -649,7 +657,7 @@ export default defineConfig({
             res.setHeader('Content-Type', 'application/json');
             res.end(JSON.stringify({ 
               error: 'Internal proxy error',
-              details: error instanceof Error ? error.message : 'Unknown error'
+              details: error && error.message ? error.message : 'Unknown error'
             }));
           }
         });
@@ -672,7 +680,7 @@ export default defineConfig({
       configureServer(server) {
         // Log all requests to help debug asset serving
         server.middlewares.use((req, res, next) => {
-          if (req.url?.includes('assets') || req.url?.includes('images') || req.url?.includes('.png')) {
+          if ((req.url && req.url.includes('assets')) || (req.url && req.url.includes('images')) || (req.url && req.url.includes('.png'))) {
             console.log('🔍 Request URL:', req.url);
             console.log('🔍 Request method:', req.method);
             console.log('🔍 Request headers:', req.headers);
@@ -708,7 +716,7 @@ export default defineConfig({
           }
           
           // Use proxy for external URLs
-          return \`/api/proxy-image?url=\${encodeURIComponent(originalUrl)}\`;
+          return '/api/proxy-image?url=' + encodeURIComponent(originalUrl);
         } catch {
           // If URL parsing fails, assume it's relative
           return originalUrl;
@@ -759,7 +767,7 @@ export default defineConfig({
           }, { once: true });
         });
         
-        console.log(\`✅ Pre-processed \${processed} external images\`);
+        console.log('✅ Pre-processed ' + processed + ' external images');
         return processed;
       };
       
@@ -770,22 +778,22 @@ export default defineConfig({
       
              // Override Image constructor to automatically proxy external URLs
        const OriginalImage = window.Image;
-       window.Image = function(width?: number, height?: number): HTMLImageElement {
+       window.Image = function(width, height) {
          const img = new OriginalImage(width, height);
          
          // Override src setter
          let _src = '';
          Object.defineProperty(img, 'src', {
            get: function() { return _src; },
-           set: function(value: string) {
+           set: function(value) {
              _src = value;
              const proxiedUrl = window.proxyImageUrl(value);
-             (OriginalImage.prototype as HTMLImageElement).src.call(this, proxiedUrl);
+             OriginalImage.prototype.src.call(this, proxiedUrl);
            }
          });
          
          return img;
-       } as typeof Image;
+       };
       
       // Copy static properties
       Object.setPrototypeOf(window.Image, OriginalImage);
@@ -832,12 +840,27 @@ export default defineConfig({
           }
         });
         
-        observer.observe(document.body, { 
-          childList: true, 
-          subtree: true, 
-          attributes: true,
-          attributeFilter: ['src', 'srcset']
-        });
+        // Wait for body to be available before observing
+        if (document.body) {
+          observer.observe(document.body, { 
+            childList: true, 
+            subtree: true, 
+            attributes: true,
+            attributeFilter: ['src', 'srcset']
+          });
+        } else {
+          // Wait for body to be created
+          document.addEventListener('DOMContentLoaded', function() {
+            if (document.body) {
+              observer.observe(document.body, { 
+                childList: true, 
+                subtree: true, 
+                attributes: true,
+                attributeFilter: ['src', 'srcset']
+              });
+            }
+          });
+        }
       }
       
       console.log('✅ Enhanced image proxy system initialized');
@@ -878,20 +901,21 @@ export default defineConfig({
   }
 })
 `;
-      try {
-        await container.fs.writeFile('vite.config.js', viteConfig);
-        console.log('✅ Created WebContainer-optimized vite.config.js with CORS proxy');
-        addLog('Created optimized Vite config with image proxy', 'info');
-      } catch (writeError) {
-        console.warn('Failed to create vite.config.js:', writeError);
-        addLog('Failed to create Vite config: ' + writeError, 'warn');
+        try {
+          await container.fs.writeFile('vite.config.js', viteConfig);
+          console.log('✅ Created WebContainer-optimized vite.config.js with CORS proxy');
+          addLog('Created optimized Vite config with image proxy', 'info');
+        } catch (writeError) {
+          console.warn('Failed to create vite.config.js:', writeError);
+          addLog('Failed to create Vite config: ' + writeError, 'warn');
+        }
       }
     }
 
-    // Create WebContainer-optimized configurations for common build tools
-    try {
-      // Create a Next.js config optimized for WebContainer
-      const nextConfig = `/** @type {import('next').NextConfig} */
+      // Create WebContainer-optimized configurations for common build tools
+      try {
+        // Create a Next.js config optimized for WebContainer
+        const nextConfig = `/** @type {import('next').NextConfig} */
 const nextConfig = {
   // Enable comprehensive logging for debugging
   logging: {
@@ -974,7 +998,7 @@ const nextConfig = {
 
 module.exports = nextConfig;
 `;
-      
+        
             // Check if this is a Next.js project before creating the config
       try {
         const packageJson = await container.fs.readFile('package.json', 'utf-8');
@@ -1065,10 +1089,14 @@ export const config = {
     const env: Record<string, string> = {};
     if (basebaseToken) {
       env.BASEBASE_TOKEN = basebaseToken;
+      env.VITE_BASEBASE_TOKEN = basebaseToken;
+      env.NEXT_PUBLIC_BASEBASE_TOKEN = basebaseToken;
       console.log('Setting BASEBASE_TOKEN environment variable to ' + basebaseToken);
     }
     if (basebaseProject) {
       env.BASEBASE_PROJECT = basebaseProject;
+      env.VITE_BASEBASE_PROJECT = basebaseProject;
+      env.NEXT_PUBLIC_BASEBASE_PROJECT = basebaseProject;
       console.log('Setting BASEBASE_PROJECT environment variable to ' + basebaseProject);
     }
 
