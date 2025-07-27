@@ -225,107 +225,68 @@ class WebContainerManager {
       includeLineNumbers = true,
       caseSensitive = false,
       wholeWords = false,
-      filePattern = "*",
+      filePattern = "**/*",
       maxResults = 100,
     } = options;
 
-    // Build grep command arguments
-    const grepArgs: string[] = [];
-
-    // Recursive search
-    grepArgs.push("-r");
-
-    // Include line numbers by default
-    if (includeLineNumbers) {
-      grepArgs.push("-n");
-    }
-
-    // Case sensitivity
-    if (!caseSensitive) {
-      grepArgs.push("-i");
-    }
-
-    // Whole words only
-    if (wholeWords) {
-      grepArgs.push("-w");
-    }
-
-    // Include filename
-    grepArgs.push("-H");
-
-    // Exclude common directories that should be ignored
-    const excludeDirs = [
-      "node_modules",
-      ".git",
-      "dist",
-      "build",
-      ".next",
-      "coverage",
-      ".nyc_output",
-      ".cache",
-      "tmp",
-      "temp",
-    ];
-
-    for (const dir of excludeDirs) {
-      grepArgs.push("--exclude-dir=" + dir);
-    }
-
-    // Exclude common file types that shouldn't be searched
-    const excludeFiles = [
-      "*.log",
-      "*.map",
-      "*.min.js",
-      "*.min.css",
-      "*.png",
-      "*.jpg",
-      "*.jpeg",
-      "*.gif",
-      "*.svg",
-      "*.ico",
-      "*.woff*",
-      "*.ttf",
-      "*.eot",
-      "*.zip",
-      "*.tar",
-      "*.gz",
-    ];
-
-    for (const file of excludeFiles) {
-      grepArgs.push("--exclude=" + file);
-    }
-
-    // Add the search pattern
-    grepArgs.push(pattern);
-
-    // Add file pattern if specified and not default
-    if (filePattern !== "*") {
-      grepArgs.push("--include=" + filePattern);
-    }
-
-    // Search from current directory
-    grepArgs.push(".");
-
     try {
-      let output = await this.runCommand("grep", grepArgs);
+      // Since grep might not be available in WebContainer, implement a JavaScript-based search
+      const container = await this.getInstance();
+      const files = await this.listFiles(filePattern, ".", false);
 
-      // Limit results if specified
-      if (maxResults > 0) {
-        const lines = output.split("\n").filter((line) => line.trim());
-        if (lines.length > maxResults) {
-          const truncatedLines = lines.slice(0, maxResults);
-          output =
-            truncatedLines.join("\n") +
-            `\n\n... (truncated at ${maxResults} results, ${
-              lines.length - maxResults
-            } more matches found)`;
+      const results: string[] = [];
+      const regexFlags = caseSensitive ? "g" : "gi";
+      const searchRegex = wholeWords
+        ? new RegExp(
+            `\\b${pattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`,
+            regexFlags
+          )
+        : new RegExp(
+            pattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+            regexFlags
+          );
+
+      for (const file of files) {
+        try {
+          const content = await container.fs.readFile(file, "utf-8");
+          const lines = content.split("\n");
+
+          for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+            if (searchRegex.test(line)) {
+              const lineNumber = includeLineNumbers ? `${i + 1}:` : "";
+              const result = `${file}:${lineNumber}${line.trim()}`;
+              results.push(result);
+
+              if (results.length >= maxResults) {
+                break;
+              }
+            }
+          }
+
+          if (results.length >= maxResults) {
+            break;
+          }
+        } catch {
+          // Skip files that can't be read
+          continue;
         }
       }
 
+      if (results.length === 0) {
+        return "No matches found.";
+      }
+
+      let output = results.join("\n");
+
+      if (results.length >= maxResults) {
+        output += `\n\n... (truncated at ${maxResults} results)`;
+      }
+
       return output;
-    } catch {
-      // If grep fails (e.g., no matches), return empty result
-      return "No matches found.";
+    } catch (error) {
+      console.error("Error in grepSearch:", error);
+      return "Error performing search.";
     }
   }
 

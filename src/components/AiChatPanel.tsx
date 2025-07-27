@@ -74,10 +74,13 @@ ${repoStructure}
 - Recently modified: ${recentFiles}
 
 WORKFLOW:
-1. Use list_files and read_file to understand the codebase
-2. Use get_diagnostics to check for errors before/after changes
-3. Make targeted changes with write_file
-4. Verify changes with run_command (lint/test)
+1. Use list_files to see what files are available
+2. Use grep_search to find specific text patterns across files (this is crucial for finding where text appears)
+3. Use read_file to examine specific files in detail
+4. Make targeted changes with write_file
+5. Verify changes with run_command (lint/test)
+
+IMPORTANT: When asked to find or change specific text, ALWAYS use grep_search first to locate where the text appears. This is much more efficient than reading files one by one.
 
 Always read files before modifying them. When making changes, explain your reasoning and check for errors afterward. Please be as concise as possible, summarizing your ideas, your approach, and your completed work in a few lines at a time.`;
   };
@@ -86,8 +89,6 @@ Always read files before modifying them. When making changes, explain your reaso
     if (!input.trim() || !webcontainer) return;
 
     const userMessageContent = input.trim();
-    console.log(`🤖 [AI Assistant] User message: "${userMessageContent}"`);
-    console.log(`🤖 [AI Assistant] Using provider: ${apiProvider}`);
     
     const newUiMessages: UiMessage[] = [
       ...messages,
@@ -109,7 +110,6 @@ Always read files before modifying them. When making changes, explain your reaso
     setInput('');
     setIsLoading(true);
     setLoadingMessage('Thinking...');
-    console.log(`🤖 [AI Assistant] Starting ${apiProvider} request...`);
 
     try {
       if (apiProvider === 'anthropic') {
@@ -118,21 +118,16 @@ Always read files before modifying them. When making changes, explain your reaso
         await sendGoogleMessage(apiMessages);
       }
     } catch (error) {
-      console.error(`🤖 [AI Assistant] Error sending message:`, error);
+      console.error(`Error sending message:`, error);
       // Handle error message display
     } finally {
       setIsLoading(false);
       setLoadingMessage('');
-      console.log(`🤖 [AI Assistant] Request completed`);
     }
   };
 
   const sendAnthropicMessage = async (apiMessages: MessageParam[]) => {
-    console.log(`🤖 [Anthropic] Preparing system prompt...`);
     const systemPrompt = await getSystemPrompt();
-    console.log(`🤖 [Anthropic] System prompt length: ${systemPrompt.length} chars`);
-    
-    console.log(`🤖 [Anthropic] Sending initial request to Claude...`);
     const res = await anthropic.messages.create({
       model: 'claude-3-opus-20240229',
       max_tokens: 4096,
@@ -182,7 +177,6 @@ Always read files before modifying them. When making changes, explain your reaso
 
     while (apiResponse.stop_reason === 'tool_use') {
       const toolUses = apiResponse.content.filter((c): c is Anthropic.Messages.ToolUseBlock => c.type === 'tool_use');
-      console.log(`🤖 [Anthropic] Claude wants to use ${toolUses.length} tool(s): ${toolUses.map(t => t.name).join(', ')}`);
       
       const toolResults = await Promise.all(
         toolUses.map(async (toolUse): Promise<ToolResultBlockParam> => {
@@ -193,54 +187,42 @@ Always read files before modifying them. When making changes, explain your reaso
           // Update loading message based on tool being used
           if (name === 'read_file') {
             setLoadingMessage('Reading file...');
-            console.log(`🔧 [Tool] Reading file: ${toolInput.path}`);
           } else if (name === 'write_file') {
             setLoadingMessage('Writing file...');
-            console.log(`🔧 [Tool] Writing file: ${toolInput.path}`);
           } else if (name === 'list_files') {
             setLoadingMessage('Listing files...');
-            console.log(`🔧 [Tool] Listing files with pattern: ${toolInput.pattern}`);
           } else if (name === 'grep_search') {
             setLoadingMessage('Searching files...');
-            console.log(`🔧 [Tool] Searching for pattern: ${toolInput.pattern}`);
           } else if (name === 'run_command') {
             setLoadingMessage('Running command...');
-            console.log(`🔧 [Tool] Running command: ${toolInput.command} ${Array.isArray(toolInput.args) ? toolInput.args.join(' ') : ''}`);
           }
 
-          try {
+                    try {
             if (name === 'read_file' && typeof toolInput.path === 'string') {
               toolOutput = await WebContainerManager.readFile(toolInput.path);
-              console.log(`🔧 [Tool] Read ${toolOutput?.length || 0} characters from ${toolInput.path}`);
             } else if (name === 'write_file' && typeof toolInput.path === 'string' && typeof toolInput.content === 'string') {
               await WebContainerManager.writeFile(toolInput.path, toolInput.content);
               toolOutput = `File ${toolInput.path} written successfully.`;
-              console.log(`🔧 [Tool] Wrote ${toolInput.content.length} characters to ${toolInput.path}`);
             } else if (name === 'list_files' && typeof toolInput.pattern === 'string') {
               const includeHidden = typeof toolInput.include_hidden === 'boolean' ? toolInput.include_hidden : false;
               const files = await WebContainerManager.listFiles(toolInput.pattern, '.', includeHidden);
               toolOutput = files.join('\n');
-              console.log(`🔧 [Tool] Found ${files.length} files matching pattern: ${toolInput.pattern}`);
             } else if (name === 'grep_search' && typeof toolInput.pattern === 'string') {
               const options = {
                 caseSensitive: typeof toolInput.case_sensitive === 'boolean' ? toolInput.case_sensitive : false,
                 wholeWords: typeof toolInput.whole_words === 'boolean' ? toolInput.whole_words : false,
-                filePattern: typeof toolInput.file_pattern === 'string' ? toolInput.file_pattern : "*",
+                filePattern: typeof toolInput.file_pattern === 'string' ? toolInput.file_pattern : "**/*",
                 maxResults: typeof toolInput.max_results === 'number' ? toolInput.max_results : 100,
               };
               toolOutput = await WebContainerManager.grepSearch(toolInput.pattern, options);
-              console.log(`🔧 [Tool] Search completed for pattern: ${toolInput.pattern}`);
             } else if (name === 'run_command' && typeof toolInput.command === 'string' && Array.isArray(toolInput.args)) {
               toolOutput = await WebContainerManager.runCommand(toolInput.command, toolInput.args as string[]);
-              console.log(`🔧 [Tool] Command completed with ${toolOutput?.length || 0} characters of output`);
             } else {
               toolOutput = `Unknown tool or invalid arguments: ${name}`;
-              console.warn(`🔧 [Tool] Unknown tool or invalid arguments: ${name}`);
             }
           } catch (e: unknown) {
               const error = e as Error;
               toolOutput = `Error executing tool ${name}: ${error.message}`;
-              console.error(`🔧 [Tool] Error executing ${name}:`, error.message);
           }
 
           return {
@@ -254,7 +236,6 @@ Always read files before modifying them. When making changes, explain your reaso
       newApiMessages.push({ role: 'user', content: toolResults });
 
       setLoadingMessage('Thinking...');
-      console.log(`🤖 [Anthropic] Sending tool results back to Claude...`);
       apiResponse = await anthropic.messages.create({
           model: 'claude-3-opus-20240229',
           max_tokens: 4096,
@@ -272,7 +253,6 @@ Always read files before modifying them. When making changes, explain your reaso
       newApiMessages.push({role: apiResponse.role, content: apiResponse.content });
     }
 
-    console.log(`🤖 [Anthropic] Claude finished, final response length: ${apiResponse.content.map(c => 'text' in c ? c.text?.length || 0 : 0).reduce((a, b) => a + b, 0)} chars`);
     setMessages(prev => [
       ...prev,
       { id: apiResponse.id, role: 'assistant', content: apiResponse.content },
@@ -281,13 +261,11 @@ Always read files before modifying them. When making changes, explain your reaso
 
   const sendGoogleMessage = async (apiMessages: MessageParam[]) => {
     if (!google) {
-      console.error('🤖 [Google] Google AI client not initialized - missing API key');
+      console.error('Google AI client not initialized - missing API key');
       return;
     }
 
-    console.log(`🤖 [Google] Preparing system prompt...`);
     const systemPrompt = await getSystemPrompt();
-    console.log(`🤖 [Google] System prompt length: ${systemPrompt.length} chars`);
     
     // Define function declarations for Gemini
     const readFileDeclaration = {
@@ -345,13 +323,13 @@ Always read files before modifying them. When making changes, explain your reaso
 
     const grepSearchDeclaration = {
       name: 'grep_search',
-      description: 'Search for text patterns across all files in the repository',
+      description: 'Search for text patterns across all files in the repository. Use this to find where specific text appears before making changes.',
       parameters: {
         type: Type.OBJECT,
         properties: {
           pattern: {
             type: Type.STRING,
-            description: 'The text pattern to search for'
+            description: 'The exact text pattern to search for (e.g., "Improve This", "button", "function")'
           },
           case_sensitive: {
             type: Type.BOOLEAN,
@@ -363,7 +341,7 @@ Always read files before modifying them. When making changes, explain your reaso
           },
           file_pattern: {
             type: Type.STRING,
-            description: 'File pattern to limit search scope (e.g., "*.js", "*.tsx")'
+            description: 'File pattern to limit search scope (e.g., "*.js", "*.tsx", "*.html")'
           },
           max_results: {
             type: Type.NUMBER,
@@ -405,7 +383,6 @@ Always read files before modifying them. When making changes, explain your reaso
     }).join('\n\n');
 
     const fullPrompt = `${systemPrompt}\n\nConversation so far:\n${conversationHistory}`;
-    console.log(`🤖 [Google] Sending request to Gemini with tools...`);
 
     let response = await google.models.generateContent({
       model: "gemini-2.0-flash",
@@ -420,75 +397,65 @@ Always read files before modifying them. When making changes, explain your reaso
     // Handle function calls in a loop similar to Anthropic
     let responseText = response.text || '';
     const toolResults: string[] = [];
+    let functionCalls = response.functionCalls || [];
+    let iterationCount = 0;
+    const maxIterations = 10; // Prevent infinite loops
 
-    while (response.functionCalls && response.functionCalls.length > 0) {
-      console.log(`🤖 [Google] Gemini wants to use ${response.functionCalls.length} tool(s): ${response.functionCalls.map(fc => fc.name).join(', ')}`);
+    while (functionCalls.length > 0 && iterationCount < maxIterations) {
+      iterationCount++;
       
-      for (const functionCall of response.functionCalls) {
+      for (const functionCall of functionCalls) {
         const { name, args } = functionCall;
         let toolOutput: string | undefined;
 
         // Update loading message based on tool being used
         if (name === 'read_file') {
           setLoadingMessage('Reading file...');
-          console.log(`🔧 [Tool] Reading file: ${args?.path}`);
         } else if (name === 'write_file') {
           setLoadingMessage('Writing file...');
-          console.log(`🔧 [Tool] Writing file: ${args?.path}`);
         } else if (name === 'list_files') {
           setLoadingMessage('Listing files...');
-          console.log(`🔧 [Tool] Listing files with pattern: ${args?.pattern}`);
         } else if (name === 'grep_search') {
           setLoadingMessage('Searching files...');
-          console.log(`🔧 [Tool] Searching for pattern: ${args?.pattern}`);
         } else if (name === 'run_command') {
           setLoadingMessage('Running command...');
-          console.log(`🔧 [Tool] Running command: ${args?.command} ${Array.isArray(args?.args) ? args.args.join(' ') : ''}`);
         }
 
         try {
           if (name === 'read_file' && typeof args?.path === 'string') {
             toolOutput = await WebContainerManager.readFile(args.path);
-            console.log(`🔧 [Tool] Read ${toolOutput?.length || 0} characters from ${args.path}`);
           } else if (name === 'write_file' && typeof args?.path === 'string' && typeof args?.content === 'string') {
             await WebContainerManager.writeFile(args.path, args.content);
             toolOutput = `File ${args.path} written successfully.`;
-            console.log(`🔧 [Tool] Wrote ${args.content.length} characters to ${args.path}`);
           } else if (name === 'list_files' && typeof args?.pattern === 'string') {
             const includeHidden = typeof args?.include_hidden === 'boolean' ? args.include_hidden : false;
             const files = await WebContainerManager.listFiles(args.pattern, '.', includeHidden);
             toolOutput = files.join('\n');
-            console.log(`🔧 [Tool] Found ${files.length} files matching pattern: ${args.pattern}`);
           } else if (name === 'grep_search' && typeof args?.pattern === 'string') {
             const options = {
               caseSensitive: typeof args?.case_sensitive === 'boolean' ? args.case_sensitive : false,
               wholeWords: typeof args?.whole_words === 'boolean' ? args.whole_words : false,
-              filePattern: typeof args?.file_pattern === 'string' ? args.file_pattern : "*",
+              filePattern: typeof args?.file_pattern === 'string' ? args.file_pattern : "**/*",
               maxResults: typeof args?.max_results === 'number' ? args.max_results : 100,
             };
             toolOutput = await WebContainerManager.grepSearch(args.pattern, options);
-            console.log(`🔧 [Tool] Search completed for pattern: ${args.pattern}`);
           } else if (name === 'run_command' && typeof args?.command === 'string' && Array.isArray(args?.args)) {
             toolOutput = await WebContainerManager.runCommand(args.command, args.args as string[]);
-            console.log(`🔧 [Tool] Command completed with ${toolOutput?.length || 0} characters of output`);
           } else {
             toolOutput = `Unknown tool or invalid arguments: ${name}`;
-            console.warn(`🔧 [Tool] Unknown tool or invalid arguments: ${name}`);
           }
         } catch (e: unknown) {
           const error = e as Error;
           toolOutput = `Error executing tool ${name}: ${error.message}`;
-          console.error(`🔧 [Tool] Error executing ${name}:`, error.message);
         }
 
-        toolResults.push(`Function ${name} result: ${toolOutput ?? 'Tool executed with no output.'}`);
+        toolResults.push(`Function ${name} result:\n${toolOutput ?? 'Tool executed with no output.'}`);
       }
 
       // Send tool results back to Gemini
       setLoadingMessage('Thinking...');
-      console.log(`🤖 [Google] Sending tool results back to Gemini...`);
       
-      const toolResultsPrompt = `${fullPrompt}\n\nTool execution results:\n${toolResults.join('\n\n')}\n\nPlease provide your response based on the tool results above.`;
+      const toolResultsPrompt = `${fullPrompt}\n\nTool execution results:\n${toolResults.join('\n\n')}\n\nBased on these tool results, please continue with your task. If you need to search for specific text, use grep_search. If you need to examine a file in detail, use read_file. If you need to make changes, use write_file.`;
       
       response = await google.models.generateContent({
         model: "gemini-2.0-flash",
@@ -503,9 +470,15 @@ Always read files before modifying them. When making changes, explain your reaso
       if (response.text) {
         responseText = response.text;
       }
+      
+      // Update functionCalls for the next iteration
+      functionCalls = response.functionCalls || [];
+    }
+    
+    if (iterationCount >= maxIterations) {
+      responseText += '\n\n[Note: Function call loop was stopped to prevent infinite iteration]';
     }
 
-    console.log(`🤖 [Google] Gemini response length: ${responseText.length} chars`);
     setMessages(prev => [
       ...prev,
       { id: Date.now().toString(), role: 'assistant', content: [{type: 'text', text: responseText}] as ContentBlock[] },
@@ -522,6 +495,15 @@ Always read files before modifying them. When making changes, explain your reaso
   const renderContent = (content: ContentBlock[]) => {
     return content.map((block, index) => {
       if (block.type === 'text') {
+        // Pre-process text to handle <thinking> tags
+        let processedText = block.text;
+        if (typeof processedText === 'string') {
+          processedText = processedText.replace(
+            /<thinking>(.*?)<\/thinking>/g,
+            '<span class="text-gray-400 text-xs italic">$1</span>'
+          );
+        }
+
         return (
           <div key={index} className="prose prose-sm max-w-none">
             <ReactMarkdown
@@ -587,7 +569,7 @@ Always read files before modifying them. When making changes, explain your reaso
                 td: ({children}) => <td className="px-2 py-1">{children}</td>,
               }}
             >
-              {block.text}
+              {processedText}
             </ReactMarkdown>
           </div>
         );
