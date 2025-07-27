@@ -74,11 +74,10 @@ ${repoStructure}
 - Recently modified: ${recentFiles}
 
 WORKFLOW:
-1. Use list_files to see what files are available
-2. Use grep_search to find specific text patterns across files (this is crucial for finding where text appears)
-3. Use read_file to examine specific files in detail
-4. Make targeted changes with write_file
-5. Verify changes with run_command (lint/test)
+1. Use list_files to see what files are available or use grep_search to find specific text patterns across files (this is crucial for finding where text appears)
+2. Use read_file to examine specific files in detail
+3. Make targeted changes with write_file
+4. Verify changes with run_command (lint/test)
 
 IMPORTANT: When asked to find or change specific text, ALWAYS use grep_search first to locate where the text appears. This is much more efficient than reading files one by one.
 
@@ -89,6 +88,7 @@ Always read files before modifying them. When making changes, explain your reaso
     if (!input.trim() || !webcontainer) return;
 
     const userMessageContent = input.trim();
+    console.log(`🤖 [AI] User: "${userMessageContent}"`);
     
     const newUiMessages: UiMessage[] = [
       ...messages,
@@ -111,6 +111,8 @@ Always read files before modifying them. When making changes, explain your reaso
     setIsLoading(true);
     setLoadingMessage('Thinking...');
 
+    console.log(`🤖 [AI] Sending request to ${apiProvider}...`);
+
     try {
       if (apiProvider === 'anthropic') {
         await sendAnthropicMessage(apiMessages);
@@ -118,11 +120,12 @@ Always read files before modifying them. When making changes, explain your reaso
         await sendGoogleMessage(apiMessages);
       }
     } catch (error) {
-      console.error(`Error sending message:`, error);
+      console.error(`🤖 [AI] Error:`, error);
       // Handle error message display
     } finally {
       setIsLoading(false);
       setLoadingMessage('');
+      console.log(`🤖 [AI] Request completed`);
     }
   };
 
@@ -177,6 +180,7 @@ Always read files before modifying them. When making changes, explain your reaso
 
     while (apiResponse.stop_reason === 'tool_use') {
       const toolUses = apiResponse.content.filter((c): c is Anthropic.Messages.ToolUseBlock => c.type === 'tool_use');
+      console.log(`🔧 [Tools] Claude wants to use: ${toolUses.map(t => t.name).join(', ')}`);
       
       const toolResults = await Promise.all(
         toolUses.map(async (toolUse): Promise<ToolResultBlockParam> => {
@@ -200,13 +204,16 @@ Always read files before modifying them. When making changes, explain your reaso
                     try {
             if (name === 'read_file' && typeof toolInput.path === 'string') {
               toolOutput = await WebContainerManager.readFile(toolInput.path);
+              console.log(`🔧 [Tools] Read file: ${toolInput.path}`);
             } else if (name === 'write_file' && typeof toolInput.path === 'string' && typeof toolInput.content === 'string') {
               await WebContainerManager.writeFile(toolInput.path, toolInput.content);
               toolOutput = `File ${toolInput.path} written successfully.`;
+              console.log(`🔧 [Tools] Wrote file: ${toolInput.path}`);
             } else if (name === 'list_files' && typeof toolInput.pattern === 'string') {
               const includeHidden = typeof toolInput.include_hidden === 'boolean' ? toolInput.include_hidden : false;
               const files = await WebContainerManager.listFiles(toolInput.pattern, '.', includeHidden);
               toolOutput = files.join('\n');
+              console.log(`🔧 [Tools] Listed ${files.length} files`);
             } else if (name === 'grep_search' && typeof toolInput.pattern === 'string') {
               const options = {
                 caseSensitive: typeof toolInput.case_sensitive === 'boolean' ? toolInput.case_sensitive : false,
@@ -215,14 +222,17 @@ Always read files before modifying them. When making changes, explain your reaso
                 maxResults: typeof toolInput.max_results === 'number' ? toolInput.max_results : 100,
               };
               toolOutput = await WebContainerManager.grepSearch(toolInput.pattern, options);
+              console.log(`🔧 [Tools] Searched for: "${toolInput.pattern}"`);
             } else if (name === 'run_command' && typeof toolInput.command === 'string' && Array.isArray(toolInput.args)) {
               toolOutput = await WebContainerManager.runCommand(toolInput.command, toolInput.args as string[]);
+              console.log(`🔧 [Tools] Ran command: ${toolInput.command}`);
             } else {
               toolOutput = `Unknown tool or invalid arguments: ${name}`;
             }
           } catch (e: unknown) {
               const error = e as Error;
               toolOutput = `Error executing tool ${name}: ${error.message}`;
+              console.error(`🔧 [Tools] Error with ${name}:`, error.message);
           }
 
           return {
@@ -236,6 +246,7 @@ Always read files before modifying them. When making changes, explain your reaso
       newApiMessages.push({ role: 'user', content: toolResults });
 
       setLoadingMessage('Thinking...');
+      console.log(`🔧 [Tools] Sending results back to Claude...`);
       apiResponse = await anthropic.messages.create({
           model: 'claude-3-opus-20240229',
           max_tokens: 4096,
@@ -253,6 +264,7 @@ Always read files before modifying them. When making changes, explain your reaso
       newApiMessages.push({role: apiResponse.role, content: apiResponse.content });
     }
 
+    console.log(`🤖 [AI] Claude finished with response`);
     setMessages(prev => [
       ...prev,
       { id: apiResponse.id, role: 'assistant', content: apiResponse.content },
@@ -261,7 +273,7 @@ Always read files before modifying them. When making changes, explain your reaso
 
   const sendGoogleMessage = async (apiMessages: MessageParam[]) => {
     if (!google) {
-      console.error('Google AI client not initialized - missing API key');
+      console.error('🤖 [AI] Google AI client not initialized - missing API key');
       return;
     }
 
@@ -384,82 +396,11 @@ Always read files before modifying them. When making changes, explain your reaso
 
     const fullPrompt = `${systemPrompt}\n\nConversation so far:\n${conversationHistory}`;
 
-    let response = await google.models.generateContent({
-      model: "gemini-2.0-flash",
-      contents: fullPrompt,
-      config: {
-        tools: [{
-          functionDeclarations: functionDeclarations
-        }]
-      }
-    });
-
-    // Handle function calls in a loop similar to Anthropic
-    let responseText = response.text || '';
-    const toolResults: string[] = [];
-    let functionCalls = response.functionCalls || [];
-    let iterationCount = 0;
-    const maxIterations = 10; // Prevent infinite loops
-
-    while (functionCalls.length > 0 && iterationCount < maxIterations) {
-      iterationCount++;
-      
-      for (const functionCall of functionCalls) {
-        const { name, args } = functionCall;
-        let toolOutput: string | undefined;
-
-        // Update loading message based on tool being used
-        if (name === 'read_file') {
-          setLoadingMessage('Reading file...');
-        } else if (name === 'write_file') {
-          setLoadingMessage('Writing file...');
-        } else if (name === 'list_files') {
-          setLoadingMessage('Listing files...');
-        } else if (name === 'grep_search') {
-          setLoadingMessage('Searching files...');
-        } else if (name === 'run_command') {
-          setLoadingMessage('Running command...');
-        }
-
-        try {
-          if (name === 'read_file' && typeof args?.path === 'string') {
-            toolOutput = await WebContainerManager.readFile(args.path);
-          } else if (name === 'write_file' && typeof args?.path === 'string' && typeof args?.content === 'string') {
-            await WebContainerManager.writeFile(args.path, args.content);
-            toolOutput = `File ${args.path} written successfully.`;
-          } else if (name === 'list_files' && typeof args?.pattern === 'string') {
-            const includeHidden = typeof args?.include_hidden === 'boolean' ? args.include_hidden : false;
-            const files = await WebContainerManager.listFiles(args.pattern, '.', includeHidden);
-            toolOutput = files.join('\n');
-          } else if (name === 'grep_search' && typeof args?.pattern === 'string') {
-            const options = {
-              caseSensitive: typeof args?.case_sensitive === 'boolean' ? args.case_sensitive : false,
-              wholeWords: typeof args?.whole_words === 'boolean' ? args.whole_words : false,
-              filePattern: typeof args?.file_pattern === 'string' ? args.file_pattern : "**/*",
-              maxResults: typeof args?.max_results === 'number' ? args.max_results : 100,
-            };
-            toolOutput = await WebContainerManager.grepSearch(args.pattern, options);
-          } else if (name === 'run_command' && typeof args?.command === 'string' && Array.isArray(args?.args)) {
-            toolOutput = await WebContainerManager.runCommand(args.command, args.args as string[]);
-          } else {
-            toolOutput = `Unknown tool or invalid arguments: ${name}`;
-          }
-        } catch (e: unknown) {
-          const error = e as Error;
-          toolOutput = `Error executing tool ${name}: ${error.message}`;
-        }
-
-        toolResults.push(`Function ${name} result:\n${toolOutput ?? 'Tool executed with no output.'}`);
-      }
-
-      // Send tool results back to Gemini
-      setLoadingMessage('Thinking...');
-      
-      const toolResultsPrompt = `${fullPrompt}\n\nTool execution results:\n${toolResults.join('\n\n')}\n\nBased on these tool results, please continue with your task. If you need to search for specific text, use grep_search. If you need to examine a file in detail, use read_file. If you need to make changes, use write_file.`;
-      
-      response = await google.models.generateContent({
+    try {
+      console.log('🤖 [DEBUG] Starting Google GenAI request...');
+      let response = await google.models.generateContent({
         model: "gemini-2.0-flash",
-        contents: toolResultsPrompt,
+        contents: fullPrompt,
         config: {
           tools: [{
             functionDeclarations: functionDeclarations
@@ -467,22 +408,193 @@ Always read files before modifying them. When making changes, explain your reaso
         }
       });
 
-      if (response.text) {
-        responseText = response.text;
+      console.log('🤖 [DEBUG] Got response from Google GenAI:', response);
+      console.log('🤖 [DEBUG] Response type:', typeof response);
+      console.log('🤖 [DEBUG] Response keys:', Object.keys(response));
+
+      // Handle function calls in a loop similar to Anthropic
+      let responseText = '';
+      const toolResults: string[] = [];
+      let functionCalls: Array<{ name?: string; args?: Record<string, unknown> }> = [];
+      let iterationCount = 0;
+      const maxIterations = 10; // Increased to allow more complex tasks
+
+      // Extract text and function calls from response
+      try {
+        console.log('🤖 [DEBUG] Attempting to extract response data...');
+        console.log('🤖 [DEBUG] Response candidates:', response.candidates);
+        
+        // Extract text from candidates
+        if (response.candidates && response.candidates.length > 0) {
+          const candidate = response.candidates[0];
+          console.log('🤖 [DEBUG] First candidate:', candidate);
+          
+          if (candidate.content && candidate.content.parts) {
+            console.log('🤖 [DEBUG] Candidate parts:', candidate.content.parts);
+            
+            // Extract text parts
+            const textParts = candidate.content.parts
+              .filter((part: { text?: string }) => part.text)
+              .map((part: { text?: string }) => part.text || '');
+            responseText = textParts.join('');
+            console.log('🤖 [DEBUG] Extracted text:', responseText);
+            
+            // Extract function call parts
+            const functionCallParts = candidate.content.parts
+              .filter((part: { functionCall?: { name?: string; args?: Record<string, unknown> } }) => part.functionCall);
+            functionCalls = functionCallParts.map((part: { functionCall?: { name?: string; args?: Record<string, unknown> } }) => ({
+              name: part.functionCall?.name || '',
+              args: part.functionCall?.args || {}
+            }));
+            console.log('🤖 [DEBUG] Extracted function calls:', functionCalls);
+          }
+        }
+        
+        console.log('🤖 [DEBUG] Function calls length:', functionCalls.length);
+      } catch (error) {
+        console.error('🤖 [DEBUG] Error extracting response data:', error);
+      }
+
+      while (functionCalls.length > 0 && iterationCount < maxIterations) {
+        iterationCount++;
+        console.log(`🤖 [DEBUG] Starting iteration ${iterationCount}/${maxIterations}`);
+        console.log(`🔧 [Tools] Gemini wants to use: ${functionCalls.map((fc: { name?: string }) => fc.name || 'unknown').join(', ')}`);
+        
+        // Clear functionCalls to prevent infinite loop
+        const currentFunctionCalls = [...functionCalls];
+        functionCalls = [];
+        console.log(`🤖 [DEBUG] Cleared functionCalls array, processing ${currentFunctionCalls.length} calls`);
+        
+        for (const functionCall of currentFunctionCalls) {
+          const { name, args } = functionCall;
+          let toolOutput: string | undefined;
+
+          // Update loading message based on tool being used
+          if (name === 'read_file') {
+            setLoadingMessage('Reading file...');
+          } else if (name === 'write_file') {
+            setLoadingMessage('Writing file...');
+          } else if (name === 'list_files') {
+            setLoadingMessage('Listing files...');
+          } else if (name === 'grep_search') {
+            setLoadingMessage('Searching files...');
+          } else if (name === 'run_command') {
+            setLoadingMessage('Running command...');
+          }
+
+          try {
+            if (name === 'read_file' && typeof args?.path === 'string') {
+              toolOutput = await WebContainerManager.readFile(args.path);
+              console.log(`🔧 [Tools] Read file: ${args.path}`);
+            } else if (name === 'write_file' && typeof args?.path === 'string' && typeof args?.content === 'string') {
+              await WebContainerManager.writeFile(args.path, args.content);
+              toolOutput = `File ${args.path} written successfully.`;
+              console.log(`🔧 [Tools] Wrote file: ${args.path}`);
+            } else if (name === 'list_files' && typeof args?.pattern === 'string') {
+              const includeHidden = typeof args?.include_hidden === 'boolean' ? args.include_hidden : false;
+              const files = await WebContainerManager.listFiles(args.pattern, '.', includeHidden);
+              toolOutput = files.join('\n');
+              console.log(`🔧 [Tools] Listed ${files.length} files`);
+            } else if (name === 'grep_search' && typeof args?.pattern === 'string') {
+              const options = {
+                caseSensitive: typeof args?.case_sensitive === 'boolean' ? args.case_sensitive : false,
+                wholeWords: typeof args?.whole_words === 'boolean' ? args.whole_words : false,
+                filePattern: typeof args?.file_pattern === 'string' ? args.file_pattern : "**/*",
+                maxResults: typeof args?.max_results === 'number' ? args.max_results : 100,
+              };
+              toolOutput = await WebContainerManager.grepSearch(args.pattern, options);
+              console.log(`🔧 [Tools] Searched for: "${args.pattern}"`);
+            } else if (name === 'run_command' && typeof args?.command === 'string' && Array.isArray(args?.args)) {
+              toolOutput = await WebContainerManager.runCommand(args.command, args.args as string[]);
+              console.log(`🔧 [Tools] Ran command: ${args.command}`);
+            } else {
+              toolOutput = `Unknown tool or invalid arguments: ${name}`;
+            }
+          } catch (e: unknown) {
+            const error = e as Error;
+            toolOutput = `Error executing tool ${name}: ${error.message}`;
+            console.error(`🔧 [Tools] Error with ${name}:`, error.message);
+          }
+
+          toolResults.push(`Function ${name} result:\n${toolOutput ?? 'Tool executed with no output.'}`);
+        }
+
+        // Send tool results back to Gemini
+        setLoadingMessage('Thinking...');
+        console.log(`🔧 [Tools] Sending results back to Gemini...`);
+        console.log(`🤖 [DEBUG] Tool results count: ${toolResults.length}`);
+        
+        const toolResultsPrompt = `${fullPrompt}\n\nTool execution results:\n${toolResults.join('\n\n')}\n\nBased on these tool results, please continue with your task. If you need to search for specific text, use grep_search. If you need to examine a file in detail, use read_file. If you need to make changes, use write_file.`;
+        
+        console.log('🤖 [DEBUG] Making follow-up request to Google GenAI...');
+        response = await google.models.generateContent({
+          model: "gemini-2.0-flash",
+          contents: toolResultsPrompt,
+          config: {
+            tools: [{
+              functionDeclarations: functionDeclarations
+            }]
+          }
+        });
+
+        console.log('🤖 [DEBUG] Got follow-up response:', response);
+        console.log('🤖 [DEBUG] Follow-up response keys:', Object.keys(response));
+
+        try {
+          console.log('🤖 [DEBUG] Attempting to extract follow-up response data...');
+          
+          // Extract text and function calls from follow-up response
+          if (response.candidates && response.candidates.length > 0) {
+            const candidate = response.candidates[0];
+            console.log('🤖 [DEBUG] Follow-up candidate:', candidate);
+            
+            if (candidate.content && candidate.content.parts) {
+              console.log('🤖 [DEBUG] Follow-up candidate parts:', candidate.content.parts);
+              
+              // Extract text parts
+              const textParts = candidate.content.parts
+                .filter((part: { text?: string }) => part.text)
+                .map((part: { text?: string }) => part.text || '');
+              if (textParts.length > 0) {
+                responseText = textParts.join('');
+                console.log('🤖 [DEBUG] Updated response text:', responseText);
+              }
+              
+              // Extract function call parts
+              const functionCallParts = candidate.content.parts
+                .filter((part: { functionCall?: { name?: string; args?: Record<string, unknown> } }) => part.functionCall);
+              functionCalls = functionCallParts.map((part: { functionCall?: { name?: string; args?: Record<string, unknown> } }) => ({
+                name: part.functionCall?.name || '',
+                args: part.functionCall?.args || {}
+              }));
+              console.log('🤖 [DEBUG] Updated function calls:', functionCalls);
+              console.log('🤖 [DEBUG] Updated function calls length:', functionCalls.length);
+            }
+          }
+        } catch (error) {
+          console.error('🤖 [DEBUG] Error updating response data:', error);
+          break;
+        }
       }
       
-      // Update functionCalls for the next iteration
-      functionCalls = response.functionCalls || [];
-    }
-    
-    if (iterationCount >= maxIterations) {
-      responseText += '\n\n[Note: Function call loop was stopped to prevent infinite iteration]';
-    }
+      if (iterationCount >= maxIterations) {
+        console.warn(`🔧 [Tools] Reached max iterations (${maxIterations}), stopping loop`);
+        responseText += '\n\n[Note: Function call loop was stopped to prevent infinite iteration]';
+      }
 
-    setMessages(prev => [
-      ...prev,
-      { id: Date.now().toString(), role: 'assistant', content: [{type: 'text', text: responseText}] as ContentBlock[] },
-    ]);
+      console.log(`🤖 [DEBUG] Final response text:`, responseText);
+      console.log(`🤖 [AI] Gemini finished with response`);
+      setMessages(prev => [
+        ...prev,
+        { id: Date.now().toString(), role: 'assistant', content: [{type: 'text', text: responseText}] as ContentBlock[] },
+      ]);
+    } catch (error) {
+      console.error('🤖 [AI] Error in Google GenAI:', error);
+      setMessages(prev => [
+        ...prev,
+        { id: Date.now().toString(), role: 'assistant', content: [{type: 'text', text: 'Sorry, there was an error processing your request. Please try again.'}] as ContentBlock[] },
+      ]);
+    }
   }
 
   const handleKeyPress = (e: React.KeyboardEvent): void => {
