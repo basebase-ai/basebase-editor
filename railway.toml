@@ -5,7 +5,7 @@ builder = "nixpacks"
 healthcheckPath = "/"
 healthcheckTimeout = 100
 restartPolicyType = "never"
-startCommand = "npm run preview"
+startCommand = "npm start"
 
 [[deploy.environmentVariables]]
 name = "NODE_ENV"

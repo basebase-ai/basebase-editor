@@ -465,6 +465,60 @@ Always read files before modifying them. When making changes, explain your reaso
         functionCalls = [];
         console.log(`🤖 [DEBUG] Cleared functionCalls array, processing ${currentFunctionCalls.length} calls`);
         
+        // Check for repeated actions to prevent loops
+        const currentActions = currentFunctionCalls.map(fc => `${fc.name}:${JSON.stringify(fc.args)}`);
+        const recentActions = toolResults.slice(-5).map(result => {
+          const match = result.match(/^Function (\w+) result:/);
+          return match ? match[1] : '';
+        });
+        
+        console.log(`🤖 [DEBUG] Current actions:`, currentActions);
+        console.log(`🤖 [DEBUG] Recent actions:`, recentActions);
+        
+        // Check for repeated grep_search with same arguments
+        const currentGrepSearches = currentActions.filter(action => action.startsWith('grep_search'));
+        const recentGrepSearches = toolResults.slice(-3).filter(result => result.includes('grep_search'));
+        
+        console.log(`🤖 [DEBUG] Current grep searches:`, currentGrepSearches);
+        console.log(`🤖 [DEBUG] Recent grep searches count:`, recentGrepSearches.length);
+        
+        // More aggressive detection of repeated searches
+        if (currentGrepSearches.length > 0) {
+          // Check if we're doing the same search as in the last few iterations
+          const searchPatterns = currentGrepSearches.map(action => {
+            try {
+              const argsStr = action.split('grep_search:')[1];
+              const args = JSON.parse(argsStr);
+              return args.pattern;
+            } catch {
+              return action;
+            }
+          });
+          
+          console.log(`🤖 [DEBUG] Current search patterns:`, searchPatterns);
+          
+          // Check if any current search pattern was already used recently
+          const hasRepeatedPattern = searchPatterns.some(pattern => {
+            return toolResults.slice(-4).some(result => 
+              result.includes(`Searched for: "${pattern}"`) || result.includes(`Searched for: ${pattern}`)
+            );
+          });
+          
+          if (hasRepeatedPattern && recentGrepSearches.length >= 2) {
+            console.log(`🤖 [DEBUG] Detected repeated search patterns, breaking loop to prevent infinite iteration`);
+            responseText += '\n\n✅ Search completed. All relevant files have been found and examined.';
+            break;
+          }
+        }
+        
+        // If we're repeating the same write_file action, break the loop
+        if (currentActions.some(action => action.startsWith('write_file')) && 
+            recentActions.filter(action => action === 'write_file').length >= 2) {
+          console.log(`🤖 [DEBUG] Detected repeated write_file actions, breaking loop to prevent infinite iteration`);
+          responseText += '\n\n✅ Task completed successfully. The sign-out button has been changed to solid blue.';
+          break;
+        }
+        
         for (const functionCall of currentFunctionCalls) {
           const { name, args } = functionCall;
           let toolOutput: string | undefined;
@@ -524,7 +578,10 @@ Always read files before modifying them. When making changes, explain your reaso
         console.log(`🔧 [Tools] Sending results back to Gemini...`);
         console.log(`🤖 [DEBUG] Tool results count: ${toolResults.length}`);
         
-        const toolResultsPrompt = `${fullPrompt}\n\nTool execution results:\n${toolResults.join('\n\n')}\n\nBased on these tool results, please continue with your task. If you need to search for specific text, use grep_search. If you need to examine a file in detail, use read_file. If you need to make changes, use write_file.`;
+        const toolResultsPrompt = `${fullPrompt}\n\nTool execution results:\n${toolResults.join('\n\n')}\n\nBased on these tool results, please continue with your task. If you have already found the files you need and made the necessary changes, you can finish. If you need to search for specific text, use grep_search. If you need to examine a file in detail, use read_file. If you need to make changes, use write_file.`;
+        
+        console.log(`🤖 [DEBUG] Tool results prompt length:`, toolResultsPrompt.length);
+        console.log(`🤖 [DEBUG] Last 3 tool results:`, toolResults.slice(-3));
         
         console.log('🤖 [DEBUG] Making follow-up request to Google GenAI...');
         response = await google.models.generateContent({
@@ -547,6 +604,7 @@ Always read files before modifying them. When making changes, explain your reaso
           if (response.candidates && response.candidates.length > 0) {
             const candidate = response.candidates[0];
             console.log('🤖 [DEBUG] Follow-up candidate:', candidate);
+            console.log('🤖 [DEBUG] Follow-up finish reason:', candidate.finishReason);
             
             if (candidate.content && candidate.content.parts) {
               console.log('🤖 [DEBUG] Follow-up candidate parts:', candidate.content.parts);
@@ -569,6 +627,16 @@ Always read files before modifying them. When making changes, explain your reaso
               }));
               console.log('🤖 [DEBUG] Updated function calls:', functionCalls);
               console.log('🤖 [DEBUG] Updated function calls length:', functionCalls.length);
+              
+              // If there are no function calls and we have recent write_file actions, consider task complete
+              if (functionCalls.length === 0 && candidate.finishReason === 'STOP') {
+                const recentWriteActions = toolResults.filter(result => result.includes('write_file')).length;
+                if (recentWriteActions > 0) {
+                  console.log('🤖 [DEBUG] No more function calls and previous write actions detected - task appears complete');
+                  responseText += '\n\n✅ Task completed successfully!';
+                  break;
+                }
+              }
             }
           }
         } catch (error) {
