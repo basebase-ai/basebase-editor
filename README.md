@@ -14,7 +14,7 @@ A browser-based integrated development environment (IDE) that runs entirely in y
 
 ## 🎯 How It Works
 
-1. **Enter a GitHub repository URL** via query parameter (`?repo=https://github.com/owner/repo`)
+1. **Enter a GitHub repository URL** via URL structure (`/PROJECT?repo=https://github.com/owner/repo`)
 2. **Authenticate with GitHub** using a personal access token
 3. **WebContainer boots** and clones the repository into a browser-based Node.js environment
 4. **Dependencies install** automatically via npm
@@ -25,10 +25,10 @@ A browser-based integrated development environment (IDE) that runs entirely in y
 
 ### Quick Start
 
-1. Visit the application with a repository URL:
+1. Visit the application with a project ID and repository URL:
 
    ```
-   https://your-app.com/?repo=https://github.com/username/repository-name
+   https://your-app.com/PROJECT?repo=https://github.com/username/repository-name
    ```
 
 2. When prompted, enter your GitHub Personal Access Token
@@ -92,8 +92,8 @@ WebContainers provide a complete Node.js environment in the browser:
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-org/basebase-client-starter
-cd basebase-client-starter
+git clone https://github.com/your-org/basebase-editor
+cd basebase-editor
 
 # Install dependencies
 npm install
@@ -147,13 +147,13 @@ The IDE uses a three-panel layout:
 
 ```
 # Open a React project
-https://your-app.com/?repo=https://github.com/facebook/create-react-app
+https://your-app.com/my-react-app?repo=https://github.com/facebook/create-react-app
 
 # Open a Vue project
-https://your-app.com/?repo=https://github.com/vuejs/create-vue
+https://your-app.com/my-vue-app?repo=https://github.com/vuejs/create-vue
 
 # Open any Vite project
-https://your-app.com/?repo=https://github.com/vitejs/vite-react-ts-starter
+https://your-app.com/my-vite-app?repo=https://github.com/vitejs/vite-react-ts-starter
 ```
 
 ## 🚧 Limitations

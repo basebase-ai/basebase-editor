@@ -60,7 +60,7 @@ const GitHubAuth: React.FC<GitHubAuthProps> = ({ onAuthSuccess }) => {
           </h2>
           
           <p className="text-gray-600 mb-6 leading-relaxed">
-            To clone and edit repositories, we need access to your GitHub account. 
+            To save the changes you make to this project, we need access to your GitHub account.
             You'll need a Personal Access Token with repository permissions.
           </p>
 

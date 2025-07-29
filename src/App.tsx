@@ -21,11 +21,14 @@ const App: React.FC = () => {
   });
 
   useEffect(() => {
-    // Parse repo URL, token, and project from query parameters
+    // Parse repo URL, token, and project from URL
     const urlParams = new URLSearchParams(window.location.search);
     const repoParam = urlParams.get('repo');
     const tokenParam = urlParams.get('token');
-    const projectParam = urlParams.get('project');
+    
+    // Extract project from path segment (first segment after /)
+    const pathSegments = window.location.pathname.split('/').filter(Boolean);
+    const projectParam = pathSegments.length > 0 ? pathSegments[0] : null;
     
     // Handle repository URL
     let repoUrl: string | null = null;
@@ -67,7 +70,7 @@ const App: React.FC = () => {
     }
 
     // Remove sensitive parameters from URL immediately for security
-    // Keep project param for better UX, but remove token (sensitive) and repo (long URL)
+    // Keep project param in path for better UX, but remove token (sensitive) and repo (long URL)
     if (tokenParam || repoParam) {
       const newUrl = new URL(window.location.href);
       if (tokenParam) newUrl.searchParams.delete('token');
@@ -125,7 +128,7 @@ const App: React.FC = () => {
             </p>
             <div className="bg-gray-50 rounded p-4 text-left">
               <code className="text-sm text-gray-700">
-                {window.location.origin}?repo=https://github.com/owner/repo
+                {window.location.origin}/PROJECT?repo=https://github.com/owner/repo
               </code>
             </div>
           </div>
