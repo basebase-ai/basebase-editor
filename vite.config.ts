@@ -8,7 +8,6 @@ export default defineConfig({
     headers: {
       "Cross-Origin-Embedder-Policy": "require-corp",
       "Cross-Origin-Opener-Policy": "same-origin",
-      "Cross-Origin-Resource-Policy": "cross-origin",
     },
     host: "0.0.0.0", // Allow external access for WebContainer
     cors: true,
