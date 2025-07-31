@@ -118,16 +118,16 @@ const PreviewPane: React.FC<PreviewPaneProps> = ({ serverInfo }) => {
 
   return (
     <div className="h-full flex flex-col">
-      <div className="bg-gray-50 px-4 py-2 border-b flex items-center justify-between">
-        <h3 className="text-sm font-medium text-gray-700">Preview</h3>
+      <div className="bg-gray-50 dark:bg-gray-900 px-4 py-2 border-b dark:border-gray-700 flex items-center justify-between transition-colors">
+        <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 transition-colors">Preview</h3>
         {serverInfo && (
           <div className="flex items-center gap-2">
-            <span className="text-xs text-gray-500">
+            <span className="text-xs text-gray-500 dark:text-gray-400 transition-colors">
               Port {serverInfo.port}
             </span>
             <button
               onClick={refreshPreview}
-              className="text-gray-400 hover:text-gray-600 transition-colors"
+              className="text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 transition-colors"
               title="Refresh preview"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

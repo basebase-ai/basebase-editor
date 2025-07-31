@@ -31,6 +31,7 @@ const AiChatPanel: React.FC<AiChatPanelProps> = ({ webcontainer }) => {
   const [loadingMessage, setLoadingMessage] = useState<string>('');
   const [apiProvider, setApiProvider] = useState<ApiProvider>('google');
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   const anthropic = new Anthropic({
     apiKey: import.meta.env.VITE_ANTHROPIC_API_KEY,
@@ -67,6 +68,8 @@ const AiChatPanel: React.FC<AiChatPanelProps> = ({ webcontainer }) => {
 
     return `You are a coding assistant working on a web app project. You have access to tools to read, write, and analyze files.
 
+CRITICAL: All your tools (read_file, write_file, list_files, grep_search, run_command) operate on the USER'S PROJECT FILES that have been cloned from GitHub into a WebContainer environment. You are NOT working on the editor application itself - you are working on the actual project files that the user wants to modify.
+
 CURRENT PROJECT CONTEXT:
 - Repository structure:
 ${repoStructure}
@@ -74,16 +77,36 @@ ${repoStructure}
 - Recently modified: ${recentFiles}
 
 WORKFLOW:
-1. Use list_files to see what files are available or use grep_search to find specific text patterns across files (this is crucial for finding where text appears)
-2. Use read_file to examine specific files in detail
-3. Make targeted changes with write_file
-4. Verify changes with run_command (lint/test)
+1. Use list_files to see what files are available in the user's project, or use grep_search to find specific text patterns across the user's project files (this is crucial for finding where text appears in their codebase)
+2. Use read_file to examine specific files in the user's project
+3. Make targeted changes with write_file to modify the user's project files
+4. Verify changes with run_command (lint/test) within the user's project
 
-IMPORTANT: When asked to find or change specific text, ALWAYS use grep_search first to locate where the text appears. This is much more efficient than reading files one by one.
+IMPORTANT: When asked to find or change specific text like "Sign In" buttons, UI components, etc., ALWAYS use grep_search first to locate where that text appears in the USER'S PROJECT FILES. The text you're looking for exists in the cloned repository, not in the editor's source code.
 
 Always read files before modifying them. When making changes, explain your reasoning and check for errors afterward. Please be as concise as possible, summarizing your ideas, your approach, and your completed work in a few lines at a time.`;
   };
   
+  const stopGeneration = (): void => {
+    if (abortControllerRef.current) {
+      console.log('🛑 [AI] Stopping generation...');
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+      setIsLoading(false);
+      setLoadingMessage('');
+      
+      // Add a system message to indicate generation was stopped
+      setMessages(prev => [
+        ...prev,
+        {
+          id: Date.now().toString(),
+          role: 'assistant',
+          content: [{ type: 'text', text: '🛑 Generation stopped by user.' }] as ContentBlock[],
+        },
+      ]);
+    }
+  };
+
   const sendMessage = async (): Promise<void> => {
     if (!input.trim() || !webcontainer) return;
 
@@ -111,6 +134,9 @@ Always read files before modifying them. When making changes, explain your reaso
     setIsLoading(true);
     setLoadingMessage('Thinking...');
 
+    // Create new abort controller for this request
+    abortControllerRef.current = new AbortController();
+
     console.log(`🤖 [AI] Sending request to ${apiProvider}...`);
 
     try {
@@ -119,12 +145,26 @@ Always read files before modifying them. When making changes, explain your reaso
       } else {
         await sendGoogleMessage(apiMessages);
       }
-    } catch (error) {
+    } catch (error: unknown) {
       console.error(`🤖 [AI] Error:`, error);
-      // Handle error message display
+      // Check if the error is due to abortion
+      if (error instanceof Error && error.name === 'AbortError') {
+        console.log('🛑 [AI] Request was aborted');
+        return; // Don't show error message for user-initiated stops
+      }
+      // Handle other errors
+      setMessages(prev => [
+        ...prev,
+        {
+          id: Date.now().toString(),
+          role: 'assistant',
+          content: [{ type: 'text', text: `❌ Error: ${error instanceof Error ? error.message : 'Unknown error occurred'}` }] as ContentBlock[],
+        },
+      ]);
     } finally {
       setIsLoading(false);
       setLoadingMessage('');
+      abortControllerRef.current = null;
       console.log(`🤖 [AI] Request completed`);
     }
   };
@@ -139,26 +179,26 @@ Always read files before modifying them. When making changes, explain your reaso
       tools: [
         {
           name: 'read_file',
-          description: 'Read the contents of a file',
+          description: 'Read the contents of a file in the user\'s project (WebContainer)',
           input_schema: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] },
         },
         {
           name: 'write_file',
-          description: 'Write/update a file',
+          description: 'Write/update a file in the user\'s project (WebContainer)',
           input_schema: { type: 'object', properties: { path: { type: 'string' }, content: { type: 'string' } }, required: ['path', 'content'] },
         },
         {
           name: 'list_files',
-          description: 'List files in directory (with glob patterns)',
+          description: 'List files in the user\'s project directory (WebContainer) with glob patterns',
           input_schema: { type: 'object', properties: { pattern: { type: 'string' }, include_hidden: { type: 'boolean' } }, required: ['pattern'] },
         },
         {
           name: 'grep_search',
-          description: 'Search for text patterns across all files in the repository',
+          description: 'Search for text patterns across all files in the user\'s project repository (WebContainer)',
           input_schema: { 
             type: 'object', 
             properties: { 
-              pattern: { type: 'string', description: 'The text pattern to search for' },
+              pattern: { type: 'string', description: 'The text pattern to search for in the user\'s project files' },
               case_sensitive: { type: 'boolean', description: 'Whether the search should be case sensitive (default: false)' },
               whole_words: { type: 'boolean', description: 'Whether to match whole words only (default: false)' },
               file_pattern: { type: 'string', description: 'File pattern to limit search scope (e.g., "*.js", "*.tsx")' },
@@ -169,7 +209,7 @@ Always read files before modifying them. When making changes, explain your reaso
         },
         {
           name: 'run_command',
-          description: 'Execute commands (lint, test, build)',
+          description: 'Execute commands (lint, test, build) in the user\'s project (WebContainer)',
           input_schema: { type: 'object', properties: { command: { type: 'string' }, args: { type: 'array', items: { type: 'string' } } }, required: ['command', 'args'] },
         },
       ],
@@ -179,6 +219,11 @@ Always read files before modifying them. When making changes, explain your reaso
     const newApiMessages: MessageParam[] = [...apiMessages, { role: apiResponse.role, content: apiResponse.content }];
 
     while (apiResponse.stop_reason === 'tool_use') {
+      // Check if aborted
+      if (abortControllerRef.current?.signal.aborted) {
+        throw new Error('AbortError');
+      }
+      
       const toolUses = apiResponse.content.filter((c): c is Anthropic.Messages.ToolUseBlock => c.type === 'tool_use');
       console.log(`🔧 [Tools] Claude wants to use: ${toolUses.map(t => t.name).join(', ')}`);
       
@@ -202,6 +247,11 @@ Always read files before modifying them. When making changes, explain your reaso
           }
 
                     try {
+            // Check if aborted before each tool execution
+            if (abortControllerRef.current?.signal.aborted) {
+              throw new Error('AbortError');
+            }
+            
             if (name === 'read_file' && typeof toolInput.path === 'string') {
               toolOutput = await WebContainerManager.readFile(toolInput.path);
               console.log(`🔧 [Tools] Read file: ${toolInput.path}`);
@@ -282,13 +332,13 @@ Always read files before modifying them. When making changes, explain your reaso
     // Define function declarations for Gemini
     const readFileDeclaration = {
       name: 'read_file',
-      description: 'Read the contents of a file',
+      description: 'Read the contents of a file in the user\'s project (WebContainer)',
       parameters: {
         type: Type.OBJECT,
         properties: {
           path: {
             type: Type.STRING,
-            description: 'Path to the file to read'
+            description: 'Path to the file to read in the user\'s project'
           }
         },
         required: ['path']
@@ -297,17 +347,17 @@ Always read files before modifying them. When making changes, explain your reaso
 
     const writeFileDeclaration = {
       name: 'write_file',
-      description: 'Write/update a file',
+      description: 'Write/update a file in the user\'s project (WebContainer)',
       parameters: {
         type: Type.OBJECT,
         properties: {
           path: {
             type: Type.STRING,
-            description: 'Path to the file to write'
+            description: 'Path to the file to write in the user\'s project'
           },
           content: {
             type: Type.STRING,
-            description: 'Content to write to the file'
+            description: 'Content to write to the file in the user\'s project'
           }
         },
         required: ['path', 'content']
@@ -316,13 +366,13 @@ Always read files before modifying them. When making changes, explain your reaso
 
     const listFilesDeclaration = {
       name: 'list_files',
-      description: 'List files in directory (with glob patterns)',
+      description: 'List files in the user\'s project directory (WebContainer) with glob patterns',
       parameters: {
         type: Type.OBJECT,
         properties: {
           pattern: {
             type: Type.STRING,
-            description: 'Glob pattern to match files (e.g., "*.js", "**/*.tsx")'
+            description: 'Glob pattern to match files in the user\'s project (e.g., "*.js", "**/*.tsx")'
           },
           include_hidden: {
             type: Type.BOOLEAN,
@@ -335,13 +385,13 @@ Always read files before modifying them. When making changes, explain your reaso
 
     const grepSearchDeclaration = {
       name: 'grep_search',
-      description: 'Search for text patterns across all files in the repository. Use this to find where specific text appears before making changes.',
+      description: 'Search for text patterns across all files in the user\'s project repository (WebContainer). Use this to find where specific text appears in the user\'s project before making changes.',
       parameters: {
         type: Type.OBJECT,
         properties: {
           pattern: {
             type: Type.STRING,
-            description: 'The exact text pattern to search for (e.g., "Improve This", "button", "function")'
+            description: 'The exact text pattern to search for in the user\'s project files (e.g., "Sign In", "button", "function")'
           },
           case_sensitive: {
             type: Type.BOOLEAN,
@@ -366,13 +416,13 @@ Always read files before modifying them. When making changes, explain your reaso
 
     const runCommandDeclaration = {
       name: 'run_command',
-      description: 'Execute commands (lint, test, build)',
+      description: 'Execute commands (lint, test, build) in the user\'s project (WebContainer)',
       parameters: {
         type: Type.OBJECT,
         properties: {
           command: {
             type: Type.STRING,
-            description: 'Command to execute'
+            description: 'Command to execute in the user\'s project'
           },
           args: {
             type: Type.ARRAY,
@@ -456,6 +506,11 @@ Always read files before modifying them. When making changes, explain your reaso
       }
 
       while (functionCalls.length > 0 && iterationCount < maxIterations) {
+        // Check if aborted
+        if (abortControllerRef.current?.signal.aborted) {
+          throw new Error('AbortError');
+        }
+        
         iterationCount++;
         console.log(`🤖 [DEBUG] Starting iteration ${iterationCount}/${maxIterations}`);
         console.log(`🔧 [Tools] Gemini wants to use: ${functionCalls.map((fc: { name?: string }) => fc.name || 'unknown').join(', ')}`);
@@ -537,6 +592,11 @@ Always read files before modifying them. When making changes, explain your reaso
           }
 
           try {
+            // Check if aborted before each tool execution
+            if (abortControllerRef.current?.signal.aborted) {
+              throw new Error('AbortError');
+            }
+            
             if (name === 'read_file' && typeof args?.path === 'string') {
               toolOutput = await WebContainerManager.readFile(args.path);
               console.log(`🔧 [Tools] Read file: ${args.path}`);
@@ -668,7 +728,11 @@ Always read files before modifying them. When making changes, explain your reaso
   const handleKeyPress = (e: React.KeyboardEvent): void => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      sendMessage();
+      if (isLoading) {
+        stopGeneration();
+      } else {
+        sendMessage();
+      }
     }
   };
 
@@ -838,7 +902,7 @@ Always read files before modifying them. When making changes, explain your reaso
       </div>
 
       <div className="border-t dark:border-gray-700 p-4 bg-white dark:bg-gray-800 transition-colors">
-        <div className="flex gap-2">
+        <div className="flex gap-2 items-end">
           <textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
@@ -850,19 +914,44 @@ Always read files before modifying them. When making changes, explain your reaso
                 (apiProvider === 'google' && (!import.meta.env.VITE_GEMINI_API_KEY || !google))
             }
             className="flex-1 resize-none border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 dark:focus:ring-brand-400 focus:border-transparent disabled:bg-gray-100 dark:disabled:bg-gray-800 transition-colors"
-            rows={3}
+            rows={1}
+            style={{
+              minHeight: '2.5rem',
+              maxHeight: '10rem',
+              height: 'auto',
+              overflowY: input.split('\n').length > 1 ? 'auto' : 'hidden'
+            }}
+            onInput={(e) => {
+              const target = e.target as HTMLTextAreaElement;
+              target.style.height = 'auto';
+              const newHeight = Math.min(target.scrollHeight, 160); // 10rem = 160px
+              target.style.height = `${newHeight}px`;
+            }}
           />
           <button
-            onClick={sendMessage}
+            onClick={isLoading ? stopGeneration : sendMessage}
             disabled={
-                isLoading || 
-                !input.trim() ||
-                (apiProvider === 'anthropic' && !import.meta.env.VITE_ANTHROPIC_API_KEY) ||
-                (apiProvider === 'google' && (!import.meta.env.VITE_GEMINI_API_KEY || !google))
+                !isLoading && (
+                  !input.trim() ||
+                  (apiProvider === 'anthropic' && !import.meta.env.VITE_ANTHROPIC_API_KEY) ||
+                  (apiProvider === 'google' && (!import.meta.env.VITE_GEMINI_API_KEY || !google))
+                )
             }
-            className="px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg disabled:bg-gray-400 dark:disabled:bg-gray-600 disabled:cursor-not-allowed text-sm font-medium transition-colors"
+            className={`w-10 h-10 flex items-center justify-center text-white rounded-lg disabled:cursor-not-allowed transition-colors ${
+              isLoading 
+                ? 'bg-red-600 hover:bg-red-700' 
+                : 'bg-brand-600 hover:bg-brand-700 disabled:bg-gray-400 dark:disabled:bg-gray-600'
+            }`}
           >
-            Send
+            {isLoading ? (
+              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                <rect x="6" y="6" width="12" height="12" rx="2" />
+              </svg>
+            ) : (
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+              </svg>
+            )}
           </button>
         </div>
         <div className="text-xs text-gray-500 dark:text-gray-400 mt-2 transition-colors">

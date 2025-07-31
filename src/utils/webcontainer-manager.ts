@@ -289,6 +289,15 @@ class WebContainerManager {
       const container = await this.getInstance();
       const files = await this.listFiles(filePattern, ".", false);
 
+      console.log(
+        `[grepSearch] Searching for "${pattern}" with options:`,
+        options
+      );
+      console.log(
+        `[grepSearch] Found ${files.length} files to search:`,
+        files.slice(0, 10)
+      ); // Show first 10 files
+
       const results: string[] = [];
       const regexFlags = caseSensitive ? "g" : "gi";
       const searchRegex = wholeWords
@@ -301,14 +310,21 @@ class WebContainerManager {
             regexFlags
           );
 
+      console.log(`[grepSearch] Using regex:`, searchRegex);
+
       for (const file of files) {
         try {
           const content = await container.fs.readFile(file, "utf-8");
           const lines = content.split("\n");
 
+          let fileHasMatches = false;
           for (let i = 0; i < lines.length; i++) {
             const line = lines[i];
             if (searchRegex.test(line)) {
+              if (!fileHasMatches) {
+                console.log(`[grepSearch] Found match in file: ${file}`);
+                fileHasMatches = true;
+              }
               const lineNumber = includeLineNumbers ? `${i + 1}:` : "";
               const result = `${file}:${lineNumber}${line.trim()}`;
               results.push(result);
@@ -322,15 +338,19 @@ class WebContainerManager {
           if (results.length >= maxResults) {
             break;
           }
-        } catch {
+        } catch (error) {
+          console.log(`[grepSearch] Could not read file: ${file}`, error);
           // Skip files that can't be read
           continue;
         }
       }
 
       if (results.length === 0) {
+        console.log(`[grepSearch] No matches found for pattern "${pattern}"`);
         return "No matches found.";
       }
+
+      console.log(`[grepSearch] Found ${results.length} total matches`);
 
       let output = results.join("\n");
 

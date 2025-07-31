@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import GitHubAuth from './components/GitHubAuth';
 import DevEnvironment from './components/DevEnvironment';
-import ThemeToggle from './components/ThemeToggle';
 import WebContainerManager from './utils/webcontainer-manager';
 
 interface AppState {
@@ -118,9 +117,7 @@ const App: React.FC = () => {
   if (!state.repoUrl) {
     return (
       <div className="min-h-screen bg-gray-100 dark:bg-gray-900 flex items-center justify-center transition-colors">
-        <div className="absolute top-4 right-4">
-          <ThemeToggle />
-        </div>
+
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-8 max-w-md w-full mx-4 transition-colors">
           <div className="text-center">
             <div className="w-16 h-16 bg-red-100 dark:bg-red-900 rounded-full mx-auto flex items-center justify-center mb-6 transition-colors">
@@ -145,9 +142,7 @@ const App: React.FC = () => {
   if (state.showAuth) {
     return (
       <div className="relative">
-        <div className="absolute top-4 right-4 z-10">
-          <ThemeToggle />
-        </div>
+
         <GitHubAuth 
           onAuthSuccess={handleAuthSuccess}
         />
@@ -158,9 +153,7 @@ const App: React.FC = () => {
   // Show main editor interface
   return (
     <div className="relative">
-      <div className="absolute top-4 right-4 z-50">
-        <ThemeToggle />
-      </div>
+
       <DevEnvironment 
         githubToken={state.githubToken}
         repoUrl={state.repoUrl}
