@@ -10,7 +10,7 @@ const port = process.env.PORT || 3000;
 
 // Set cross-origin isolation headers for all responses
 app.use((req, res, next) => {
-  // Standard cross-origin isolation headers
+  // Standard cross-origin isolation headers required by WebContainer
   res.setHeader("Cross-Origin-Embedder-Policy", "require-corp");
   res.setHeader("Cross-Origin-Opener-Policy", "same-origin");
   res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
@@ -19,6 +19,10 @@ app.use((req, res, next) => {
   res.setHeader("Permissions-Policy", "cross-origin-isolated=*");
   res.setHeader("X-Frame-Options", "SAMEORIGIN");
   res.setHeader("Referrer-Policy", "same-origin");
+
+  // Additional security headers that might help WebContainer
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-DNS-Prefetch-Control", "off");
 
   next();
 });

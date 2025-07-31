@@ -36,6 +36,21 @@ class WebContainerManager {
         );
         console.log("Using default WebContainer configuration");
 
+        // Check if WebContainer is actually available
+        console.log("WebContainer module:", typeof WebContainer);
+        console.log("WebContainer.boot method:", typeof WebContainer.boot);
+
+        // Log environment differences that might affect WebContainer
+        console.log("=== Environment Analysis ===");
+        console.log("NODE_ENV equivalent:", import.meta.env.MODE);
+        console.log("Vite DEV mode:", import.meta.env.DEV);
+        console.log("Vite PROD mode:", import.meta.env.PROD);
+        console.log("Base URL:", import.meta.env.BASE_URL);
+        console.log("Is localhost:", window.location.hostname === "localhost");
+        console.log("Protocol:", window.location.protocol);
+        console.log("Origin:", window.location.origin);
+        console.log("=== End Environment Analysis ===");
+
         console.log("Starting WebContainer.boot()...");
         const startTime = Date.now();
 
@@ -43,12 +58,28 @@ class WebContainerManager {
         const originalFetch = window.fetch;
         window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
           const url = typeof input === "string" ? input : input.toString();
+          console.log(`[WebContainer] Fetching: ${url}`);
           try {
             const response = await originalFetch(input, init);
             if (!response.ok) {
               console.error(
-                `[WebContainer] 404 or error loading: ${url} - Status: ${response.status}`
+                `[WebContainer] Error loading: ${url} - Status: ${response.status} - ${response.statusText}`
               );
+              // Try to get response text for more details
+              try {
+                const responseText = await response.clone().text();
+                console.error(
+                  `[WebContainer] Response body:`,
+                  responseText.substring(0, 200)
+                );
+              } catch (e) {
+                console.error(
+                  `[WebContainer] Could not read response body:`,
+                  e
+                );
+              }
+            } else {
+              console.log(`[WebContainer] Successfully loaded: ${url}`);
             }
             return response;
           } catch (error) {
@@ -90,6 +121,27 @@ class WebContainerManager {
           "Error stack:",
           error instanceof Error ? error.stack : "No stack"
         );
+
+        // Check if this is a specific WebContainer service issue
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
+        if (
+          errorMessage.includes("404") ||
+          errorMessage.includes("Failed to load resource")
+        ) {
+          console.error(
+            "=== This appears to be a WebContainer service connectivity issue ==="
+          );
+          console.error(
+            "WebContainer relies on StackBlitz's hosted infrastructure."
+          );
+          console.error(
+            "The 404 errors suggest StackBlitz's services may be experiencing issues."
+          );
+          console.error("Environment:", import.meta.env.MODE);
+          console.error("User Agent:", navigator.userAgent);
+          console.error("Current URL:", window.location.href);
+        }
 
         throw error;
       }
