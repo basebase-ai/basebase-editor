@@ -1,167 +1,31 @@
 import { WebContainer } from "@webcontainer/api";
 
 class WebContainerManager {
-  private static instance: WebContainer | null = null;
-  private static bootPromise: Promise<WebContainer> | null = null;
+  private static container: WebContainer | null = null;
 
-  static getInstance(): Promise<WebContainer> {
+  static async getInstance(): Promise<WebContainer> {
     // If we already have a booted instance, return it immediately.
-    if (this.instance) {
-      return Promise.resolve(this.instance);
+    if (this.container) {
+      console.log("WebContainer instance already exists");
+      return this.container;
     }
-
-    // If a boot is already in progress, return the existing promise.
-    // This prevents race conditions from multiple components trying to boot at once.
-    if (this.bootPromise) {
-      return this.bootPromise;
-    }
-
-    // Otherwise, start a new boot process.
-    this.bootPromise = (async () => {
-      try {
-        if (!self.crossOriginIsolated) {
-          throw new Error(
-            "WebContainer requires cross-origin isolation. " +
-              "Please ensure your page is served with proper COOP and COEP headers."
-          );
-        }
-
-        console.log("=== WebContainer Boot Start ===");
-        console.log("Environment:", import.meta.env.MODE);
-        console.log("Location:", window.location.href);
-        console.log("Cross-origin isolated:", self.crossOriginIsolated);
-        console.log(
-          "SharedArrayBuffer available:",
-          typeof SharedArrayBuffer !== "undefined"
-        );
-        console.log("Using default WebContainer configuration");
-
-        // Check if WebContainer is actually available
-        console.log("WebContainer module:", typeof WebContainer);
-        console.log("WebContainer.boot method:", typeof WebContainer.boot);
-
-        // Log environment differences that might affect WebContainer
-        console.log("=== Environment Analysis ===");
-        console.log("NODE_ENV equivalent:", import.meta.env.MODE);
-        console.log("Vite DEV mode:", import.meta.env.DEV);
-        console.log("Vite PROD mode:", import.meta.env.PROD);
-        console.log("Base URL:", import.meta.env.BASE_URL);
-        console.log("Is localhost:", window.location.hostname === "localhost");
-        console.log("Protocol:", window.location.protocol);
-        console.log("Origin:", window.location.origin);
-        console.log("=== End Environment Analysis ===");
-
-        console.log("Starting WebContainer.boot()...");
-        const startTime = Date.now();
-
-        // Monitor network requests to catch the 404
-        const originalFetch = window.fetch;
-        window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
-          const url = typeof input === "string" ? input : input.toString();
-          console.log(`[WebContainer] Fetching: ${url}`);
-          try {
-            const response = await originalFetch(input, init);
-            if (!response.ok) {
-              console.error(
-                `[WebContainer] Error loading: ${url} - Status: ${response.status} - ${response.statusText}`
-              );
-              // Try to get response text for more details
-              try {
-                const responseText = await response.clone().text();
-                console.error(
-                  `[WebContainer] Response body:`,
-                  responseText.substring(0, 200)
-                );
-              } catch (e) {
-                console.error(
-                  `[WebContainer] Could not read response body:`,
-                  e
-                );
-              }
-            } else {
-              console.log(`[WebContainer] Successfully loaded: ${url}`);
-            }
-            return response;
-          } catch (error) {
-            console.error(
-              `[WebContainer] Network error loading: ${url}`,
-              error
-            );
-            throw error;
-          }
-        };
-
-        const container = await WebContainer.boot();
-
-        // Restore original fetch
-        window.fetch = originalFetch;
-
-        const bootTime = Date.now() - startTime;
-        console.log(`WebContainer.boot() completed in ${bootTime}ms`);
-        console.log("WebContainer instance:", container);
-
-        console.log("=== WebContainer Boot Success ===");
-
-        this.instance = container;
-        return this.instance;
-      } catch (error) {
-        // On failure, clear the promise so a subsequent call can retry.
-        this.bootPromise = null;
-        console.error("=== WebContainer Boot Failed ===");
-        console.error("Error:", error);
-        console.error(
-          "Error name:",
-          error instanceof Error ? error.name : "Unknown"
-        );
-        console.error(
-          "Error message:",
-          error instanceof Error ? error.message : String(error)
-        );
-        console.error(
-          "Error stack:",
-          error instanceof Error ? error.stack : "No stack"
-        );
-
-        // Check if this is a specific WebContainer service issue
-        const errorMessage =
-          error instanceof Error ? error.message : String(error);
-        if (
-          errorMessage.includes("404") ||
-          errorMessage.includes("Failed to load resource")
-        ) {
-          console.error(
-            "=== This appears to be a WebContainer service connectivity issue ==="
-          );
-          console.error(
-            "WebContainer relies on StackBlitz's hosted infrastructure."
-          );
-          console.error(
-            "The 404 errors suggest StackBlitz's services may be experiencing issues."
-          );
-          console.error("Environment:", import.meta.env.MODE);
-          console.error("User Agent:", navigator.userAgent);
-          console.error("Current URL:", window.location.href);
-        }
-
-        throw error;
-      }
-    })();
-
-    return this.bootPromise;
+    console.log("Booting WebContainer instance");
+    this.container = await WebContainer.boot();
+    console.log("WebContainer instance booted", this.container);
+    return this.container;
   }
 
   static teardown(): void {
-    if (this.instance) {
+    if (this.container) {
       // WebContainer doesn't have a public teardown method
       // Just clear our reference to allow for a new instance if needed.
-      this.instance = null;
-      this.bootPromise = null;
+      this.container = null;
       console.log("WebContainer instance cleared");
     }
   }
 
   static hasInstance(): boolean {
-    return this.instance !== null;
+    return this.container !== null;
   }
 
   static async readFile(path: string): Promise<string> {
