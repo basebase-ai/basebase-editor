@@ -1292,17 +1292,17 @@ NEXT_PUBLIC_BASEBASE_PROJECT=${basebaseProject}
 
   if (error) {
     return (
-      <div className="min-h-screen bg-gray-100 flex items-center justify-center">
-        <div className="bg-white rounded-lg shadow-lg p-8 max-w-md w-full mx-4">
+      <div className="min-h-screen bg-gray-100 dark:bg-gray-900 flex items-center justify-center transition-colors">
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-8 max-w-md w-full mx-4 transition-colors">
           <div className="text-center">
-            <div className="w-16 h-16 bg-red-100 rounded-full mx-auto flex items-center justify-center mb-6">
+            <div className="w-16 h-16 bg-red-100 dark:bg-red-900 rounded-full mx-auto flex items-center justify-center mb-6 transition-colors">
               <span className="text-2xl">❌</span>
             </div>
-            <h2 className="text-xl font-bold text-red-600 mb-4">Error</h2>
-            <p className="text-gray-700 mb-6">{error}</p>
+            <h2 className="text-xl font-bold text-red-600 dark:text-red-400 mb-4 transition-colors">Error</h2>
+            <p className="text-gray-700 dark:text-gray-300 mb-6 transition-colors">{error}</p>
             <button
               onClick={() => window.location.reload()}
-              className="w-full bg-blue-500 text-white py-2 px-4 rounded hover:bg-blue-600"
+              className="w-full bg-brand-600 hover:bg-brand-700 text-white py-2 px-4 rounded transition-colors"
             >
               Retry
             </button>
@@ -1314,12 +1314,12 @@ NEXT_PUBLIC_BASEBASE_PROJECT=${basebaseProject}
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-gray-100 flex items-center justify-center">
-        <div className="bg-white rounded-lg shadow-lg p-8 max-w-md w-full mx-4 text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
-          <h2 className="text-xl font-bold mb-2">Setting up your development environment</h2>
-          <p className="text-gray-600">{loadingMessage}</p>
-          <div className="mt-4 text-sm text-gray-500">
+      <div className="min-h-screen bg-gray-100 dark:bg-gray-900 flex items-center justify-center transition-colors">
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-8 max-w-md w-full mx-4 text-center transition-colors">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand-600 mx-auto mb-4"></div>
+          <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-2 transition-colors">Setting up your development environment</h2>
+          <p className="text-gray-600 dark:text-gray-300 transition-colors">{loadingMessage}</p>
+          <div className="mt-4 text-sm text-gray-500 dark:text-gray-400 transition-colors">
             Repository: {repoUrl.replace('https://github.com/', '')}
           </div>
         </div>
@@ -1328,25 +1328,25 @@ NEXT_PUBLIC_BASEBASE_PROJECT=${basebaseProject}
   }
 
   return (
-    <div className="h-screen bg-gray-100 flex flex-col">
+    <div className="h-screen bg-gray-100 dark:bg-gray-900 flex flex-col transition-colors">
       {/* Header */}
-      <div className="bg-white shadow-sm border-b flex items-center justify-between px-6 py-3">
+      <div className="bg-white dark:bg-gray-800 shadow-sm border-b dark:border-gray-700 flex items-center justify-between px-6 py-3 transition-colors">
         <div className="flex items-center space-x-3">
-          <h1 className="text-xl font-bold text-gray-900">BaseBase Editor</h1>
-          <div className="text-sm text-gray-500">
+          <h1 className="text-xl font-bold text-gray-900 dark:text-white transition-colors">BaseBase Editor</h1>
+          <div className="text-sm text-gray-500 dark:text-gray-400 transition-colors">
             {repoUrl.replace('https://github.com/', '')}
           </div>
         </div>
         <div className="flex items-center space-x-3">
           <button
             onClick={() => setShowLogsModal(true)}
-            className="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors"
+            className="bg-gray-500 hover:bg-gray-600 dark:bg-gray-600 dark:hover:bg-gray-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors"
           >
             Logs
           </button>
           <button
             onClick={() => setShowPublishModal(true)}
-            className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors"
+            className="bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors"
           >
             Publish Changes
           </button>
@@ -1356,14 +1356,14 @@ NEXT_PUBLIC_BASEBASE_PROJECT=${basebaseProject}
       {/* Main content */}
       <div className="flex flex-1 overflow-hidden h-0">
         {/* AI Chat Panel - Fixed 425px width */}
-        <div className="w-[425px] flex-shrink-0 bg-white border-r h-full">
+        <div className="w-[425px] flex-shrink-0 bg-white dark:bg-gray-800 border-r dark:border-gray-700 h-full transition-colors">
           <AiChatPanel 
             webcontainer={containerRef.current}
           />
         </div>
 
         {/* Preview Pane - Takes remaining space */}
-        <div className="flex-1 bg-white h-full">
+        <div className="flex-1 bg-white dark:bg-gray-800 h-full transition-colors">
           <PreviewPane serverInfo={serverInfo} />
         </div>
       </div>

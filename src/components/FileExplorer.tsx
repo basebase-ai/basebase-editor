@@ -64,13 +64,13 @@ const FileItem: React.FC<FileItemProps> = ({ file, onFileSelect, selectedFile, d
     <>
       <div
         onClick={handleClick}
-        className={`flex items-center px-2 py-1 cursor-pointer hover:bg-gray-100 ${
-          isSelected ? 'bg-blue-100 text-blue-700' : ''
+        className={`flex items-center px-2 py-1 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors ${
+          isSelected ? 'bg-blue-100 dark:bg-brand-900/30 text-blue-700 dark:text-brand-300' : 'text-gray-900 dark:text-gray-100'
         }`}
         style={{ paddingLeft: `${depth * 20 + 8}px` }}
       >
         {file.type === 'directory' && (
-          <span className="mr-1 text-xs">
+          <span className="mr-1 text-xs text-gray-500 dark:text-gray-400">
             {isExpanded ? '▼' : '▶'}
           </span>
         )}
@@ -97,9 +97,9 @@ const FileItem: React.FC<FileItemProps> = ({ file, onFileSelect, selectedFile, d
 
 const FileExplorer: React.FC<FileExplorerProps> = ({ files, onFileSelect, selectedFile }) => {
   return (
-    <div className="h-full flex flex-col">
-      <div className="bg-gray-50 px-4 py-2 border-b">
-        <h3 className="text-sm font-medium text-gray-700">Files</h3>
+    <div className="h-full flex flex-col bg-white dark:bg-gray-800 transition-colors">
+      <div className="bg-gray-50 dark:bg-gray-900 px-4 py-2 border-b dark:border-gray-700 transition-colors">
+        <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 transition-colors">Files</h3>
       </div>
       <div className="flex-1 overflow-y-auto">
         {files.map((file) => (

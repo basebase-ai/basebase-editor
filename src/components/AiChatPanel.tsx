@@ -769,14 +769,14 @@ Always read files before modifying them. When making changes, explain your reaso
   }
 
   return (
-    <div className="h-full flex flex-col">
-      <div className="bg-gray-50 px-4 py-2 border-b flex items-center justify-between">
-        <h3 className="text-sm font-medium text-gray-700">AI Chat</h3>
+    <div className="h-full flex flex-col bg-white dark:bg-gray-800 transition-colors">
+      <div className="bg-gray-50 dark:bg-gray-900 px-4 py-2 border-b dark:border-gray-700 flex items-center justify-between transition-colors">
+        <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 transition-colors">AI Chat</h3>
         <div className="flex items-center gap-4">
             <select 
                 value={apiProvider} 
                 onChange={e => setApiProvider(e.target.value as ApiProvider)}
-                className="text-xs rounded border-gray-300"
+                className="text-xs rounded border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white transition-colors"
             >
                 <option value="anthropic">Claude</option>
                 <option value="google">Gemini</option>
@@ -787,7 +787,7 @@ Always read files before modifying them. When making changes, explain your reaso
                   (apiProvider === 'google' && import.meta.env.VITE_GEMINI_API_KEY && google) 
                     ? 'bg-green-500' : 'bg-red-500'}`}>
               </div>
-              <span className="text-xs text-gray-500">
+              <span className="text-xs text-gray-500 dark:text-gray-400 transition-colors">
                 {
                   (apiProvider === 'anthropic' && import.meta.env.VITE_ANTHROPIC_API_KEY) ||
                   (apiProvider === 'google' && import.meta.env.VITE_GEMINI_API_KEY && google) 
@@ -798,7 +798,7 @@ Always read files before modifying them. When making changes, explain your reaso
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-3 scroll-smooth">
+      <div className="flex-1 overflow-y-auto p-4 space-y-3 scroll-smooth bg-white dark:bg-gray-800 transition-colors">
         {messages.map((message) => (
           <div
             key={message.id}
@@ -807,14 +807,14 @@ Always read files before modifying them. When making changes, explain your reaso
             <div
               className={`max-w-[80%] rounded-lg px-3 py-2 ${
                 message.role === 'user'
-                  ? 'bg-blue-500 text-white'
-                  : 'bg-gray-100 text-gray-800'
-              }`}
+                  ? 'bg-brand-600 text-white'
+                  : 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200'
+              } transition-colors`}
             >
               {renderContent(message.content)}
               <div className={`text-xs mt-1 ${
-                message.role === 'user' ? 'text-blue-200' : 'text-gray-500'
-              }`}>
+                message.role === 'user' ? 'text-brand-200' : 'text-gray-500 dark:text-gray-400'
+              } transition-colors`}>
                 {/* We don't have a timestamp anymore, can be added back if needed */}
               </div>
             </div>
@@ -822,13 +822,13 @@ Always read files before modifying them. When making changes, explain your reaso
         ))}
         {isLoading && (
             <div className="flex justify-start">
-                <div className="max-w-[80%] rounded-lg px-3 py-2 bg-gray-100 text-gray-800">
+                <div className="max-w-[80%] rounded-lg px-3 py-2 bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 transition-colors">
                     <div className="flex items-center gap-2">
                         <span>{loadingMessage}</span>
                         <div className="flex gap-1">
-                            <div className="w-1 h-1 bg-gray-500 rounded-full animate-bounce" style={{animationDelay: '0ms'}}></div>
-                            <div className="w-1 h-1 bg-gray-500 rounded-full animate-bounce" style={{animationDelay: '150ms'}}></div>
-                            <div className="w-1 h-1 bg-gray-500 rounded-full animate-bounce" style={{animationDelay: '300ms'}}></div>
+                            <div className="w-1 h-1 bg-gray-500 dark:bg-gray-400 rounded-full animate-bounce" style={{animationDelay: '0ms'}}></div>
+                            <div className="w-1 h-1 bg-gray-500 dark:bg-gray-400 rounded-full animate-bounce" style={{animationDelay: '150ms'}}></div>
+                            <div className="w-1 h-1 bg-gray-500 dark:bg-gray-400 rounded-full animate-bounce" style={{animationDelay: '300ms'}}></div>
                         </div>
                     </div>
                 </div>
@@ -837,7 +837,7 @@ Always read files before modifying them. When making changes, explain your reaso
         <div ref={messagesEndRef} />
       </div>
 
-      <div className="border-t p-4">
+      <div className="border-t dark:border-gray-700 p-4 bg-white dark:bg-gray-800 transition-colors">
         <div className="flex gap-2">
           <textarea
             value={input}
@@ -849,7 +849,7 @@ Always read files before modifying them. When making changes, explain your reaso
                 (apiProvider === 'anthropic' && !import.meta.env.VITE_ANTHROPIC_API_KEY) ||
                 (apiProvider === 'google' && (!import.meta.env.VITE_GEMINI_API_KEY || !google))
             }
-            className="flex-1 resize-none border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100"
+            className="flex-1 resize-none border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-600 dark:focus:ring-brand-400 focus:border-transparent disabled:bg-gray-100 dark:disabled:bg-gray-800 transition-colors"
             rows={3}
           />
           <button
@@ -860,12 +860,12 @@ Always read files before modifying them. When making changes, explain your reaso
                 (apiProvider === 'anthropic' && !import.meta.env.VITE_ANTHROPIC_API_KEY) ||
                 (apiProvider === 'google' && (!import.meta.env.VITE_GEMINI_API_KEY || !google))
             }
-            className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:bg-gray-400 disabled:cursor-not-allowed text-sm font-medium"
+            className="px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg disabled:bg-gray-400 dark:disabled:bg-gray-600 disabled:cursor-not-allowed text-sm font-medium transition-colors"
           >
             Send
           </button>
         </div>
-        <div className="text-xs text-gray-500 mt-2">
+        <div className="text-xs text-gray-500 dark:text-gray-400 mt-2 transition-colors">
           Press Enter to send, Shift+Enter for new line
         </div>
       </div>

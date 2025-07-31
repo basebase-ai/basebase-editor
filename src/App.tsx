@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import GitHubAuth from './components/GitHubAuth';
 import DevEnvironment from './components/DevEnvironment';
+import ThemeToggle from './components/ThemeToggle';
 import WebContainerManager from './utils/webcontainer-manager';
 
 interface AppState {
@@ -116,18 +117,21 @@ const App: React.FC = () => {
   // Show error if no repo URL provided
   if (!state.repoUrl) {
     return (
-      <div className="min-h-screen bg-gray-100 flex items-center justify-center">
-        <div className="bg-white rounded-lg shadow-lg p-8 max-w-md w-full mx-4">
+      <div className="min-h-screen bg-gray-100 dark:bg-gray-900 flex items-center justify-center transition-colors">
+        <div className="absolute top-4 right-4">
+          <ThemeToggle />
+        </div>
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-8 max-w-md w-full mx-4 transition-colors">
           <div className="text-center">
-            <div className="w-16 h-16 bg-red-100 rounded-full mx-auto flex items-center justify-center mb-6">
+            <div className="w-16 h-16 bg-red-100 dark:bg-red-900 rounded-full mx-auto flex items-center justify-center mb-6 transition-colors">
               <span className="text-2xl">⚠️</span>
             </div>
-            <h2 className="text-2xl font-bold text-gray-900 mb-4">Repository Required</h2>
-            <p className="text-gray-600 mb-6">
+            <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-4 transition-colors">Repository Required</h2>
+            <p className="text-gray-600 dark:text-gray-300 mb-6 transition-colors">
               Please specify a GitHub repository URL in the query parameter.
             </p>
-            <div className="bg-gray-50 rounded p-4 text-left">
-              <code className="text-sm text-gray-700">
+            <div className="bg-gray-50 dark:bg-gray-700 rounded p-4 text-left transition-colors">
+              <code className="text-sm text-gray-700 dark:text-gray-300 transition-colors">
                 {window.location.origin}/PROJECT?repo=https://github.com/owner/repo
               </code>
             </div>
@@ -140,20 +144,30 @@ const App: React.FC = () => {
   // Show GitHub auth if needed
   if (state.showAuth) {
     return (
-      <GitHubAuth 
-        onAuthSuccess={handleAuthSuccess}
-      />
+      <div className="relative">
+        <div className="absolute top-4 right-4 z-10">
+          <ThemeToggle />
+        </div>
+        <GitHubAuth 
+          onAuthSuccess={handleAuthSuccess}
+        />
+      </div>
     );
   }
 
   // Show main editor interface
   return (
-    <DevEnvironment 
-      githubToken={state.githubToken}
-      repoUrl={state.repoUrl}
-      basebaseToken={state.basebaseToken}
-      basebaseProject={state.basebaseProject}
-    />
+    <div className="relative">
+      <div className="absolute top-4 right-4 z-50">
+        <ThemeToggle />
+      </div>
+      <DevEnvironment 
+        githubToken={state.githubToken}
+        repoUrl={state.repoUrl}
+        basebaseToken={state.basebaseToken}
+        basebaseProject={state.basebaseProject}
+      />
+    </div>
   );
 };
 

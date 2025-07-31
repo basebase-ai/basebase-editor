@@ -153,20 +153,20 @@ const PublishModal: React.FC<PublishModalProps> = ({ repoUrl, githubToken, modif
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-md mx-4">
+    <div className="fixed inset-0 bg-black bg-opacity-50 dark:bg-black dark:bg-opacity-70 flex items-center justify-center z-50 transition-colors">
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-md mx-4 transition-colors">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-bold text-gray-900">Publish Changes</h2>
+          <h2 className="text-xl font-bold text-gray-900 dark:text-white transition-colors">Publish Changes</h2>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-600"
+            className="text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
           >
             ✕
           </button>
         </div>
 
-        <div className="mb-4 p-3 bg-blue-50 rounded-md">
-          <p className="text-sm text-blue-800">
+        <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-md transition-colors">
+          <p className="text-sm text-blue-800 dark:text-blue-300 transition-colors">
             This will create a new branch and submit a pull request to the repository owner. 
             Your changes will be proposed for review and can be merged by the repository maintainer.
           </p>
@@ -174,7 +174,7 @@ const PublishModal: React.FC<PublishModalProps> = ({ repoUrl, githubToken, modif
 
         <form onSubmit={handleSubmit}>
           <div className="mb-4">
-            <label htmlFor="branchName" className="block text-sm font-medium text-gray-700 mb-2">
+            <label htmlFor="branchName" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 transition-colors">
               Branch Name
             </label>
             <input
@@ -183,13 +183,13 @@ const PublishModal: React.FC<PublishModalProps> = ({ repoUrl, githubToken, modif
               value={branchName}
               onChange={(e) => setBranchName(e.target.value)}
               placeholder="e.g., fix-header-styling"
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-md focus:outline-none focus:ring-2 focus:ring-brand-600 dark:focus:ring-brand-400 transition-colors"
               disabled={isSubmitting}
             />
           </div>
 
           <div className="mb-4">
-            <label htmlFor="description" className="block text-sm font-medium text-gray-700 mb-2">
+            <label htmlFor="description" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 transition-colors">
               What changes did you make?
             </label>
             <textarea
@@ -198,14 +198,14 @@ const PublishModal: React.FC<PublishModalProps> = ({ repoUrl, githubToken, modif
               onChange={(e) => setDescription(e.target.value)}
               placeholder="Describe the changes you made..."
               rows={4}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-md focus:outline-none focus:ring-2 focus:ring-brand-600 dark:focus:ring-brand-400 transition-colors"
               disabled={isSubmitting}
             />
           </div>
 
           {error && (
-            <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-md">
-              <p className="text-sm text-red-800">{error}</p>
+            <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md transition-colors">
+              <p className="text-sm text-red-800 dark:text-red-300 transition-colors">{error}</p>
             </div>
           )}
 
@@ -213,14 +213,14 @@ const PublishModal: React.FC<PublishModalProps> = ({ repoUrl, githubToken, modif
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-md"
+              className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-md transition-colors"
               disabled={isSubmitting}
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="px-4 py-2 text-sm font-medium text-white bg-blue-500 hover:bg-blue-600 rounded-md disabled:opacity-50"
+              className="px-4 py-2 text-sm font-medium text-white bg-brand-600 hover:bg-brand-700 rounded-md disabled:opacity-50 transition-colors"
               disabled={isSubmitting}
             >
               {isSubmitting ? 'Creating PR...' : 'Create Pull Request'}
