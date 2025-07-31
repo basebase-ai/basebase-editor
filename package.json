@@ -16,7 +16,7 @@
     "@monaco-editor/react": "^4.7.0",
     "@octokit/rest": "^22.0.0",
     "@tailwindcss/vite": "^4.1.11",
-    "@webcontainer/api": "^1.1.8",
+    "@webcontainer/api": "^1.6.4-internal.3",
     "express": "^4.21.2",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",

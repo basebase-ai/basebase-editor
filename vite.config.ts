@@ -14,9 +14,17 @@ export default defineConfig({
     cors: true,
   },
   optimizeDeps: {
-    exclude: ["@webcontainer/api"],
+    // Include WebContainer in optimization to ensure consistent behavior
+    include: ["@webcontainer/api"],
   },
   define: {
     global: "globalThis",
   },
+  build: {
+    rollupOptions: {
+      external: [],
+    },
+    assetsInlineLimit: 0, // Don't inline any assets
+  },
+  assetsInclude: ["**/*.wasm", "**/*.worker.js"],
 });

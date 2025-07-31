@@ -34,11 +34,36 @@ class WebContainerManager {
           "SharedArrayBuffer available:",
           typeof SharedArrayBuffer !== "undefined"
         );
+        console.log("Using default WebContainer configuration");
 
         console.log("Starting WebContainer.boot()...");
         const startTime = Date.now();
 
+        // Monitor network requests to catch the 404
+        const originalFetch = window.fetch;
+        window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+          const url = typeof input === "string" ? input : input.toString();
+          try {
+            const response = await originalFetch(input, init);
+            if (!response.ok) {
+              console.error(
+                `[WebContainer] 404 or error loading: ${url} - Status: ${response.status}`
+              );
+            }
+            return response;
+          } catch (error) {
+            console.error(
+              `[WebContainer] Network error loading: ${url}`,
+              error
+            );
+            throw error;
+          }
+        };
+
         const container = await WebContainer.boot();
+
+        // Restore original fetch
+        window.fetch = originalFetch;
 
         const bootTime = Date.now() - startTime;
         console.log(`WebContainer.boot() completed in ${bootTime}ms`);
@@ -53,6 +78,10 @@ class WebContainerManager {
         this.bootPromise = null;
         console.error("=== WebContainer Boot Failed ===");
         console.error("Error:", error);
+        console.error(
+          "Error name:",
+          error instanceof Error ? error.name : "Unknown"
+        );
         console.error(
           "Error message:",
           error instanceof Error ? error.message : String(error)
