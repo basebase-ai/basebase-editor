@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { WebContainer } from '@webcontainer/api';
 import { Octokit } from '@octokit/rest';
 import WebContainerManager from '../utils/webcontainer-manager';
@@ -38,143 +38,20 @@ const DevEnvironment: React.FC<DevEnvironmentProps> = ({ githubToken, repoUrl, b
   const containerRef = useRef<WebContainer | null>(null);
   const initializedRef = useRef<boolean>(false);
 
-  const addLog = (message: string, type: LogEntry['type'] = 'info'): void => {
+  const addLog = useCallback((message: string, type: LogEntry['type'] = 'info'): void => {
     const newLog: LogEntry = {
       timestamp: new Date(),
       message: message.trim(),
       type
     };
     setLogs(prevLogs => [...prevLogs, newLog]);
-  };
+  }, []);
 
   const clearLogs = (): void => {
     setLogs([]);
   };
 
-  useEffect(() => {
-    if (initializedRef.current) {
-      return;
-    }
-    initializedRef.current = true;
-
-    // Add reload detection
-    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      console.warn('Page is about to reload/unload during WebContainer initialization!');
-      e.preventDefault();
-      e.returnValue = '';
-      return '';
-    };
-
-    const handleUnload = () => {
-      console.error('Page unloaded during WebContainer initialization!');
-    };
-
-    // Add global error handling
-    const handleError = (e: ErrorEvent) => {
-      console.error('Global error during WebContainer initialization:', e.error);
-      console.error('Error message:', e.message);
-      console.error('Error filename:', e.filename);
-      console.error('Error line:', e.lineno);
-    };
-
-    const handleUnhandledRejection = (e: PromiseRejectionEvent) => {
-      console.error('Unhandled promise rejection during WebContainer initialization:', e.reason);
-      e.preventDefault(); // Prevent default handling that might cause reload
-    };
-
-    window.addEventListener('beforeunload', handleBeforeUnload);
-    window.addEventListener('unload', handleUnload);
-    window.addEventListener('error', handleError);
-    window.addEventListener('unhandledrejection', handleUnhandledRejection);
-
-    initializeEnvironment();
-    
-    return () => {
-      window.removeEventListener('beforeunload', handleBeforeUnload);
-      window.removeEventListener('unload', handleUnload);
-      window.removeEventListener('error', handleError);
-      window.removeEventListener('unhandledrejection', handleUnhandledRejection);
-      // Don't teardown here since other components might be using the same instance
-      // WebContainer will be cleaned up when the app unmounts
-    };
-  }, []);
-
-
-
-  
-
-  const initializeEnvironment = async (): Promise<void> => {
-    const maxRetries = 3;
-    let retryCount = 0;
-
-    console.log('=== DevEnvironment Initialization Start ===');
-
-    while (retryCount < maxRetries) {
-      try {
-        console.log(`=== Initialization Attempt ${retryCount + 1}/${maxRetries} ===`);
-        
-        // Debug cross-origin isolation status
-        console.log('Cross-origin isolated:', self.crossOriginIsolated);
-        console.log('SharedArrayBuffer available:', typeof SharedArrayBuffer !== 'undefined');
-        console.log('Environment:', import.meta.env.MODE);
-        
-        if (!self.crossOriginIsolated) {
-          throw new Error(
-            'This application requires cross-origin isolation to function properly. ' +
-            'The page appears to not be properly configured. Please contact support.'
-          );
-        }
-
-        setLoadingMessage(`Starting WebContainer... (attempt ${retryCount + 1}/${maxRetries})`);
-        console.log('Getting WebContainer instance...');
-        
-        // Get WebContainer instance with retry logic
-        const container = await WebContainerManager.getInstance();
-        containerRef.current = container;
-        console.log('WebContainer instance obtained successfully');
-
-        setLoadingMessage('Cloning repository...');
-        console.log('Starting repository clone...');
-        await cloneRepository(container);
-        console.log('Repository cloned successfully');
-
-        setLoadingMessage('Installing dependencies...');
-        console.log('Starting dependency installation...');
-        await installDependencies(container);
-        console.log('Dependencies installed successfully');
-
-        setLoadingMessage('Starting development server...');
-        console.log('Starting development server...');
-        await startDevServer(container);
-        console.log('Development server started successfully');
-
-        console.log('=== DevEnvironment Initialization Success ===');
-        // If we get here, everything worked
-        break;
-
-      } catch (error: unknown) {
-        retryCount++;
-        console.error(`=== Environment initialization failed (attempt ${retryCount}/${maxRetries}) ===`);
-        console.error('Error message:', error instanceof Error ? error.message : String(error));
-        console.error('Error stack:', error instanceof Error ? error.stack : 'No stack');
-        
-        if (retryCount >= maxRetries) {
-          const message = error instanceof Error ? error.message : String(error);
-          setError(`Failed to initialize environment after ${maxRetries} attempts: ${message}`);
-          setIsLoading(false);
-          console.error('=== DevEnvironment Initialization Failed ===');
-          return;
-        }
-        
-        // Wait before retrying
-        setLoadingMessage(`Retrying in 2 seconds... (attempt ${retryCount}/${maxRetries})`);
-        console.log(`Waiting 2 seconds before retry ${retryCount + 1}...`);
-        await new Promise(resolve => setTimeout(resolve, 2000));
-      }
-    }
-  };
-
-  const cloneRepository = async (container: WebContainer): Promise<void> => {
+  const cloneRepository = useCallback(async (container: WebContainer): Promise<void> => {
     if (!githubToken) {
       throw new Error('GitHub token is required');
     }
@@ -337,18 +214,18 @@ const DevEnvironment: React.FC<DevEnvironmentProps> = ({ githubToken, repoUrl, b
 
     
     // Note: WebContainer doesn't have git installed, so we'll use GitHub API for version control
-  };
+  }, [githubToken, repoUrl]);
 
 
 
-  const installDependencies = async (container: WebContainer): Promise<void> => {
+  const installDependencies = useCallback(async (container: WebContainer): Promise<void> => {
     const installProcess = await container.spawn('npm', ['install']);
     const exitCode = await installProcess.exit;
     
     if (exitCode !== 0) {
       throw new Error('Failed to install dependencies');
     }
-  };
+  }, []);
 
   /* const installClaudeCode = async (container: WebContainer): Promise<void> => {
     // Clean npm cache to prevent EEXIST errors
@@ -469,7 +346,7 @@ const DevEnvironment: React.FC<DevEnvironmentProps> = ({ githubToken, repoUrl, b
     }
   };*/
 
-  const startDevServer = async (container: WebContainer): Promise<void> => {
+  const startDevServer = useCallback(async (container: WebContainer): Promise<void> => {
     let hasWebContainerUrl = false; // Track if we have a WebContainer URL
     
     // Listen for WebContainer's server-ready events
@@ -1316,9 +1193,105 @@ NEXT_PUBLIC_BASEBASE_PROJECT=${basebaseProject}
         }
       }
     }));
-  };
+  }, [basebaseToken, basebaseProject, addLog]);
 
+  const initializeEnvironment = useCallback(async (): Promise<void> => {
+    console.log('=== DevEnvironment Initialization Start ===');
 
+    try {
+      // Debug cross-origin isolation status
+      console.log('Cross-origin isolated:', self.crossOriginIsolated);
+      console.log('SharedArrayBuffer available:', typeof SharedArrayBuffer !== 'undefined');
+      console.log('Environment:', import.meta.env.MODE);
+      
+      if (!self.crossOriginIsolated) {
+        throw new Error(
+          'This application requires cross-origin isolation to function properly. ' +
+          'The page appears to not be properly configured. Please contact support.'
+        );
+      }
+
+      setLoadingMessage(`Starting WebContainer...`);
+      console.log('Getting WebContainer instance...');
+      
+      // Get WebContainer instance with retry logic
+      const container = await WebContainerManager.getInstance();
+      containerRef.current = container;
+      console.log('WebContainer instance obtained successfully');
+
+      setLoadingMessage('Cloning repository...');
+      console.log('Starting repository clone...');
+      await cloneRepository(container);
+      console.log('Repository cloned successfully');
+
+      setLoadingMessage('Installing dependencies...');
+      console.log('Starting dependency installation...');
+      await installDependencies(container);
+      console.log('Dependencies installed successfully');
+
+      setLoadingMessage('Starting development server...');
+      console.log('Starting development server...');
+      await startDevServer(container);
+      console.log('Development server started successfully');
+
+      console.log('=== DevEnvironment Initialization Success ===');
+      // If we get here, everything worked
+
+    } catch (error: unknown) {
+      console.error('=== Environment initialization failed ===');
+      console.error('Error message:', error instanceof Error ? error.message : String(error));
+      console.error('Error stack:', error instanceof Error ? error.stack : 'No stack');
+      setError(error instanceof Error ? error.message : String(error));
+    }
+  }, [cloneRepository, installDependencies, startDevServer]);
+
+  useEffect(() => {
+    if (initializedRef.current) {
+      return;
+    }
+    initializedRef.current = true;
+
+    // Add reload detection
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      console.warn('Page is about to reload/unload during WebContainer initialization!');
+      e.preventDefault();
+      e.returnValue = '';
+      return '';
+    };
+
+    const handleUnload = () => {
+      console.error('Page unloaded during WebContainer initialization!');
+    };
+
+    // Add global error handling
+    const handleError = (e: ErrorEvent) => {
+      console.error('Global error during WebContainer initialization:', e.error);
+      console.error('Error message:', e.message);
+      console.error('Error filename:', e.filename);
+      console.error('Error line:', e.lineno);
+    };
+
+    const handleUnhandledRejection = (e: PromiseRejectionEvent) => {
+      console.error('Unhandled promise rejection during WebContainer initialization:', e.reason);
+      e.preventDefault(); // Prevent default handling that might cause reload
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    window.addEventListener('unload', handleUnload);
+    window.addEventListener('error', handleError);
+    window.addEventListener('unhandledrejection', handleUnhandledRejection);
+
+    initializeEnvironment();
+    
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      window.removeEventListener('unload', handleUnload);
+      window.removeEventListener('error', handleError);
+      window.removeEventListener('unhandledrejection', handleUnhandledRejection);
+      // Don't teardown here since other components might be using the same instance
+      // WebContainer will be cleaned up when the app unmounts
+    };
+  }, [initializeEnvironment]);
 
   if (error) {
     return (

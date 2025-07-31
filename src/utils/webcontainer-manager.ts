@@ -9,10 +9,90 @@ class WebContainerManager {
       console.log("WebContainer instance already exists");
       return this.container;
     }
-    console.log("Booting WebContainer instance");
-    this.container = await WebContainer.boot();
-    console.log("WebContainer instance booted", this.container);
-    return this.container;
+
+    console.log("=== WebContainer Boot Debug ===");
+    console.log("Location:", window.location.href);
+    console.log("Origin:", window.location.origin);
+    console.log("Hostname:", window.location.hostname);
+    console.log("Protocol:", window.location.protocol);
+    console.log(
+      "Is localhost:",
+      window.location.hostname === "localhost" ||
+        window.location.hostname === "127.0.0.1"
+    );
+    console.log(
+      "Domain type:",
+      window.location.hostname.includes("localhost")
+        ? "Development"
+        : "Production"
+    );
+    console.log("Cross-origin isolated:", self.crossOriginIsolated);
+    console.log(
+      "SharedArrayBuffer available:",
+      typeof SharedArrayBuffer !== "undefined"
+    );
+    console.log("Environment mode:", import.meta.env.MODE);
+    console.log("User Agent:", navigator.userAgent);
+
+    // Monitor fetch requests to see what WebContainer is trying to load
+    const originalFetch = window.fetch;
+    window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      console.log("🔍 WebContainer fetch request:", url);
+
+      try {
+        const response = await originalFetch(input, init);
+        if (!response.ok) {
+          console.error(
+            `❌ WebContainer fetch failed: ${url} - Status: ${response.status}`
+          );
+          console.error(
+            "Response headers:",
+            Object.fromEntries(response.headers.entries())
+          );
+
+          // Try to log response body for debugging
+          const responseClone = response.clone();
+          try {
+            const text = await responseClone.text();
+            console.error(
+              "Response body (first 500 chars):",
+              text.substring(0, 500)
+            );
+          } catch (e) {
+            console.error("Could not read response body:", e);
+          }
+        } else {
+          console.log(
+            `✅ WebContainer fetch success: ${url} - Status: ${response.status}`
+          );
+        }
+        return response;
+      } catch (error) {
+        console.error(`❌ WebContainer fetch error: ${url}`, error);
+        throw error;
+      }
+    };
+
+    try {
+      console.log("Starting WebContainer.boot()...");
+      this.container = await WebContainer.boot();
+      console.log(
+        "✅ WebContainer instance booted successfully",
+        this.container
+      );
+
+      // Restore original fetch
+      window.fetch = originalFetch;
+
+      return this.container;
+    } catch (error) {
+      // Restore original fetch even on error
+      window.fetch = originalFetch;
+
+      console.error("❌ WebContainer boot failed:", error);
+      throw error;
+    }
   }
 
   static teardown(): void {
