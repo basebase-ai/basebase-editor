@@ -26,16 +26,42 @@ class WebContainerManager {
           );
         }
 
-        console.log("Booting WebContainer...");
+        console.log("=== WebContainer Boot Start ===");
+        console.log("Environment:", import.meta.env.MODE);
+        console.log("Location:", window.location.href);
+        console.log("Cross-origin isolated:", self.crossOriginIsolated);
+        console.log(
+          "SharedArrayBuffer available:",
+          typeof SharedArrayBuffer !== "undefined"
+        );
+
+        console.log("Starting WebContainer.boot()...");
+        const startTime = Date.now();
+
         const container = await WebContainer.boot();
-        console.log("WebContainer booted successfully.");
+
+        const bootTime = Date.now() - startTime;
+        console.log(`WebContainer.boot() completed in ${bootTime}ms`);
+        console.log("WebContainer instance:", container);
+
+        console.log("=== WebContainer Boot Success ===");
 
         this.instance = container;
         return this.instance;
       } catch (error) {
         // On failure, clear the promise so a subsequent call can retry.
         this.bootPromise = null;
-        console.error("WebContainer boot failed:", error);
+        console.error("=== WebContainer Boot Failed ===");
+        console.error("Error:", error);
+        console.error(
+          "Error message:",
+          error instanceof Error ? error.message : String(error)
+        );
+        console.error(
+          "Error stack:",
+          error instanceof Error ? error.stack : "No stack"
+        );
+
         throw error;
       }
     })();

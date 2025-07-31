@@ -104,43 +104,73 @@ const DevEnvironment: React.FC<DevEnvironmentProps> = ({ githubToken, repoUrl, b
   
 
   const initializeEnvironment = async (): Promise<void> => {
-    try {
-      // Debug cross-origin isolation status
-      console.log('=== Cross-Origin Isolation Status ===');
-      console.log('self.crossOriginIsolated:', self.crossOriginIsolated);
-      console.log('SharedArrayBuffer available:', typeof SharedArrayBuffer !== 'undefined');
-      console.log('Window location:', window.location.href);
-      
-      if (!self.crossOriginIsolated) {
-        throw new Error(
-          'This application requires cross-origin isolation to function properly. ' +
-          'The page appears to not be properly configured. Please contact support.'
-        );
+    const maxRetries = 3;
+    let retryCount = 0;
+
+    console.log('=== DevEnvironment Initialization Start ===');
+
+    while (retryCount < maxRetries) {
+      try {
+        console.log(`=== Initialization Attempt ${retryCount + 1}/${maxRetries} ===`);
+        
+        // Debug cross-origin isolation status
+        console.log('Cross-origin isolated:', self.crossOriginIsolated);
+        console.log('SharedArrayBuffer available:', typeof SharedArrayBuffer !== 'undefined');
+        console.log('Environment:', import.meta.env.MODE);
+        
+        if (!self.crossOriginIsolated) {
+          throw new Error(
+            'This application requires cross-origin isolation to function properly. ' +
+            'The page appears to not be properly configured. Please contact support.'
+          );
+        }
+
+        setLoadingMessage(`Starting WebContainer... (attempt ${retryCount + 1}/${maxRetries})`);
+        console.log('Getting WebContainer instance...');
+        
+        // Get WebContainer instance with retry logic
+        const container = await WebContainerManager.getInstance();
+        containerRef.current = container;
+        console.log('WebContainer instance obtained successfully');
+
+        setLoadingMessage('Cloning repository...');
+        console.log('Starting repository clone...');
+        await cloneRepository(container);
+        console.log('Repository cloned successfully');
+
+        setLoadingMessage('Installing dependencies...');
+        console.log('Starting dependency installation...');
+        await installDependencies(container);
+        console.log('Dependencies installed successfully');
+
+        setLoadingMessage('Starting development server...');
+        console.log('Starting development server...');
+        await startDevServer(container);
+        console.log('Development server started successfully');
+
+        console.log('=== DevEnvironment Initialization Success ===');
+        // If we get here, everything worked
+        break;
+
+      } catch (error: unknown) {
+        retryCount++;
+        console.error(`=== Environment initialization failed (attempt ${retryCount}/${maxRetries}) ===`);
+        console.error('Error message:', error instanceof Error ? error.message : String(error));
+        console.error('Error stack:', error instanceof Error ? error.stack : 'No stack');
+        
+        if (retryCount >= maxRetries) {
+          const message = error instanceof Error ? error.message : String(error);
+          setError(`Failed to initialize environment after ${maxRetries} attempts: ${message}`);
+          setIsLoading(false);
+          console.error('=== DevEnvironment Initialization Failed ===');
+          return;
+        }
+        
+        // Wait before retrying
+        setLoadingMessage(`Retrying in 2 seconds... (attempt ${retryCount}/${maxRetries})`);
+        console.log(`Waiting 2 seconds before retry ${retryCount + 1}...`);
+        await new Promise(resolve => setTimeout(resolve, 2000));
       }
-
-      setLoadingMessage('Starting WebContainer...');
-      
-      // Get WebContainer instance
-      const container = await WebContainerManager.getInstance();
-      containerRef.current = container;
-
-      setLoadingMessage('Cloning repository...');
-      await cloneRepository(container);
-
-      setLoadingMessage('Installing dependencies...');
-      await installDependencies(container);
-
-      // setLoadingMessage('Installing Claude Code...');
-      // await installClaudeCode(container);
-
-      setLoadingMessage('Starting development server...');
-      await startDevServer(container);
-
-    } catch (error: unknown) {
-      console.error('Environment initialization failed:', error);
-      const message = error instanceof Error ? error.message : String(error);
-      setError(`Failed to initialize environment: ${message}`);
-      setIsLoading(false);
     }
   };
 
