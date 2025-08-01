@@ -288,7 +288,7 @@ const DevEnvironment: React.FC<DevEnvironmentProps> = ({ githubToken, repoUrl, b
     }
 
     // Create the API key helper script
-    const apiKeyHelperContent = `echo "${import.meta.env.VITE_ANTHROPIC_API_KEY || ''}"`;
+    const apiKeyHelperContent = `echo "API keys are now managed server-side"`;
     const helperPath = '/home/anthropicApiKeyHelper.sh';
     
     const createScriptProcess = await container.spawn('sh', [

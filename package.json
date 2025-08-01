@@ -17,6 +17,7 @@
     "@octokit/rest": "^22.0.0",
     "@tailwindcss/vite": "^4.1.11",
     "@webcontainer/api": "^1.6.1",
+    "dotenv": "^17.2.1",
     "express": "^4.21.2",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
